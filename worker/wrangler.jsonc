@@ -8,6 +8,11 @@
     "ALLOWED_ORIGIN": "https://dinaray.github.io",
     "CATALOG_ENABLED": "false",
     "OAUTH_ENABLED": "false",
+    "CART_ENABLED": "false",
+    "VV_AUTHORIZATION_ENDPOINT": "https://oauth.vkusvill.ru/oauth2/auth",
+    "VV_TOKEN_ENDPOINT": "https://oauth.vkusvill.ru/oauth2/token",
+    "VV_SCOPE": "catalog.search",
+    "VV_TOKEN_AUTH_METHOD": "client_secret_post",
     "APP_ENV": "staging",
     "APP_RETURN_URL": "https://dinaray.github.io/Moe_pitanie/connect.html",
     "VV_REDIRECT_URI": "https://moe-pitanie-api-staging.statusdi.workers.dev/oauth/callback"

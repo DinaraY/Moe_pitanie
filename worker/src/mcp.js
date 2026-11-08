@@ -6,11 +6,11 @@ export async function withMcp(operation, transport = fetch, accessToken) {
   let session;
   let version = '2025-06-18';
   let sequence = 0;
-  const signal = AbortSignal.timeout(15000);
+  const sessionSignal = AbortSignal.timeout(60000);
   async function rpc(method, params, notification = false) {
     const id = ++sequence;
     const response = await transport(ENDPOINT, {
-      method: 'POST', redirect: 'error', signal,
+      method: 'POST', redirect: 'error', signal: AbortSignal.any([sessionSignal, AbortSignal.timeout(15000)]),
       headers: {
         'Content-Type': 'application/json', Accept: 'application/json, text/event-stream',
         'MCP-Protocol-Version': version,

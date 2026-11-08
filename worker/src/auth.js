@@ -14,7 +14,7 @@ export function configuration(env) {
   }
   const endpoint = name => {
     const url = new URL(env[name]);
-    if (url.protocol !== 'https:' || !['vkusvill.ru', 'mcp.vkusvill.ru'].includes(url.hostname) || url.port || url.username || url.password || url.hash || url.search) throw new Error('OAUTH_NOT_CONFIGURED');
+    if (url.protocol !== 'https:' || url.hostname !== 'oauth.vkusvill.ru' || url.port || url.username || url.password || url.hash || url.search) throw new Error('OAUTH_NOT_CONFIGURED');
     return url.href;
   };
   const callback = new URL(env.VV_REDIRECT_URI);
@@ -53,6 +53,21 @@ export class AuthStore {
       return Response.json({ ok: created });
     }
     if (action === 'delete') { await this.ctx.storage.deleteAll(); return Response.json({ ok: true }); }
+    if (['claim', 'finish', 'fail'].includes(action)) {
+      const outcome = await this.ctx.storage.transaction(async tx => {
+        const record = await tx.get('record');
+        if (!record || record.kind !== 'cart' || record.expiresAt <= Date.now()) return { record: null, claimed: false };
+        if (action === 'claim') {
+          if (record.status !== 'pending') return { record, claimed: false };
+          const updated = { ...record, status: 'processing' };
+          await tx.put('record', updated); return { record: updated, claimed: true };
+        }
+        if (record.status !== 'processing') return { record, claimed: false };
+        const updated = { ...record, status: action === 'finish' ? 'done' : 'failed', result: value || null };
+        await tx.put('record', updated); return { record: updated };
+      });
+      return Response.json(outcome);
+    }
     const record = await this.ctx.storage.transaction(async tx => {
       const found = await tx.get('record');
       if (!found || found.expiresAt <= Date.now()) { await tx.delete('record'); return null; }
@@ -64,7 +79,7 @@ export class AuthStore {
   async alarm() { await this.ctx.storage.deleteAll(); }
 }
 
-async function storage(env, identifier, action, value) {
+export async function storage(env, identifier, action, value) {
   const id = env.AUTH_STORE.idFromName(await digest(identifier));
   const response = await env.AUTH_STORE.get(id).fetch('https://auth-store.internal/', { method: 'POST', body: JSON.stringify({ action, value }) });
   if (!response.ok) throw new Error('AUTH_STORE_UNAVAILABLE');
@@ -134,5 +149,5 @@ export async function sessionFor(request, env) {
   const { record } = await storage(env, session, 'read');
   if (!record) throw new Error('SESSION_EXPIRED');
   const secret = await open(env, record.payload, session);
-  return { accessToken: secret.accessToken, expiresAt: record.expiresAt, destroy: () => storage(env, session, 'delete') };
+  return { accessToken: secret.accessToken, expiresAt: record.expiresAt, owner: await digest(session), destroy: () => storage(env, session, 'delete') };
 }
