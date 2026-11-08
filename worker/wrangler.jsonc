@@ -3,10 +3,17 @@
   "main": "src/index.js",
   "compatibility_date": "2026-11-08",
   "workers_dev": true,
+  "keep_vars": true,
   "vars": {
     "ALLOWED_ORIGIN": "https://dinaray.github.io",
-    "CATALOG_ENABLED": "false"
+    "CATALOG_ENABLED": "false",
+    "OAUTH_ENABLED": "false",
+    "APP_ENV": "staging",
+    "APP_RETURN_URL": "https://dinaray.github.io/Moe_pitanie/connect.html",
+    "VV_REDIRECT_URI": "https://moe-pitanie-api-staging.statusdi.workers.dev/oauth/callback"
   },
+  "durable_objects": { "bindings": [{ "name": "AUTH_STORE", "class_name": "AuthStore" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AuthStore"] }],
   "ratelimits": [{
     "name": "CATALOG_LIMITER",
     "namespace_id": "1001",

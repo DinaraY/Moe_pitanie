@@ -2,7 +2,7 @@ const ENDPOINT = 'https://mcp.vkusvill.ru/mcp';
 const MAX_BYTES = 1024 * 1024;
 
 // A fresh session for each operation: never share user/session state across requests.
-export async function withMcp(operation, transport = fetch) {
+export async function withMcp(operation, transport = fetch, accessToken) {
   let session;
   let version = '2025-06-18';
   let sequence = 0;
@@ -14,6 +14,7 @@ export async function withMcp(operation, transport = fetch) {
       headers: {
         'Content-Type': 'application/json', Accept: 'application/json, text/event-stream',
         'MCP-Protocol-Version': version,
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
         ...(session ? { 'Mcp-Session-Id': session } : {})
       },
       body: JSON.stringify({ jsonrpc: '2.0', ...(notification ? {} : { id }), method, params })
@@ -57,6 +58,6 @@ export async function withMcp(operation, transport = fetch) {
     await rpc('notifications/initialized', {}, true);
     return await operation(rpc);
   } finally {
-    if (session) await transport(ENDPOINT, { method: 'DELETE', redirect: 'error', signal: AbortSignal.timeout(2000), headers: { 'Mcp-Session-Id': session, 'MCP-Protocol-Version': version } }).then(r => r.body?.cancel()).catch(() => {});
+    if (session) await transport(ENDPOINT, { method: 'DELETE', redirect: 'error', signal: AbortSignal.timeout(2000), headers: { 'Mcp-Session-Id': session, 'MCP-Protocol-Version': version, ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) } }).then(r => r.body?.cancel()).catch(() => {});
   }
 }

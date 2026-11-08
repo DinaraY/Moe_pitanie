@@ -16,6 +16,15 @@ test('reject other origins, rate excess, cart and unapproved tools', async () =>
   assert.equal((await worker.fetch(request('/api/cart', {}), env)).status, 501);
   assert.equal((await worker.fetch(request('/api/catalog', { tool: 'vkusvill_cart_link_create', arguments: {} }), env)).status, 400);
 });
+test('unconfigured OAuth and invalid app sessions fail closed without public fallback', async () => {
+  const worker = createWorker(() => { throw new Error('must not connect'); });
+  assert.equal((await worker.fetch(request('/oauth/start'), env)).status, 503);
+  const authenticated = new Request('https://api.example/api/tools', { headers: { Authorization: 'Bearer arbitrary-upstream-token' } });
+  assert.equal((await worker.fetch(authenticated, env)).status, 401);
+  const status = await (await worker.fetch(request('/api/status'), env)).json();
+  assert.equal(status.authorization, 'not_configured');
+  assert.equal(status.cartEnabled, false);
+});
 test('live data has provenance, unknown delivery; HTML upstream errors are hidden', async () => {
   const worker = createWorker(async operation => operation(async method => method === 'tools/list' ? { tools: [{ name: 'vkusvill_products_search' }, { name: 'vkusvill_orders_history' }] } : { content: [{ type: 'text', text: 'fixture' }] }));
   const tools = await (await worker.fetch(request('/api/tools'), env)).json();
