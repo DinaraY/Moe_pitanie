@@ -18,12 +18,7 @@
   <section class="card">
     <h2>Подключение магазина</h2>
     <p>Чтобы проверить ассортимент для доставки, выберите точный адрес в Долгопрудном в личном кабинете ВкусВилла и разрешите доступ через официальный экран входа.</p>
-    <label for="server">Сервер приложения</label><br>
-    <select id="server">
-      <option value="testing" selected>Моё питание 2</option>
-      <option value="production">Основной</option>
-      <option value="staging">Тестовый</option>
-    </select>
+    <input id="server" type="hidden" value="testing">
     <p id="status" role="status" aria-live="polite">Проверяем соединение…</p>
     <button id="connect" disabled>Подключить ВкусВилл</button>
     <button id="logout" class="secondary" hidden>Отключить сессию</button>
@@ -63,6 +58,6 @@
     <p><small>Перед созданием ссылки на корзину вы проверите состав и подтвердите его. Автоматическое оформление заказа не подключено.</small></p>
   </section>
 </main>
-<script type="module" src="connect.js"></script>
+<script type="module" src="connect.js?v=20261109-login1"></script>
 </body>
 </html>

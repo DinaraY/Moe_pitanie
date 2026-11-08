@@ -1,4 +1,4 @@
-import { nutrients, totals, nutrientBounds, totalBounds, quote } from './shared/food.js';
+import { nutrients, totals, nutrientBounds, totalBounds, quote } from './shared/food.js?v=20261109-login1';
 const servers = Object.freeze({
   testing: 'https://moe-pitanie-2.statusdi.workers.dev',
   production: 'https://moe-pitanie-api.statusdi.workers.dev',
