@@ -38,9 +38,15 @@ export function createWorker(connect = withMcp) {
     if (path === '/' && request.method === 'GET') return reply({ service: 'moe-pitanie-api', message: 'Сервер приложения работает. Состояние подключения: /api/status' });
     let oauthReady = false;
     try { configuration(env); oauthReady = true; } catch {}
+    let encryptionKeyReady = false;
+    try {
+      const key = env.TOKEN_ENCRYPTION_KEY;
+      encryptionKeyReady = typeof key === 'string' && /^[A-Za-z0-9_-]{43}$/.test(key) && atob(key.replace(/-/g, '+').replace(/_/g, '/')).length === 32;
+    } catch {}
     if (path === '/api/status' && request.method === 'GET') return reply({
       service: 'moe-pitanie-api', catalogEnabled: env.CATALOG_ENABLED === 'true',
       authorization: oauthReady ? 'available' : 'not_configured', deliveryAvailability: 'unverified',
+      oauthSetup: { clientId: !!env.VV_CLIENT_ID, clientSecret: !!env.VV_CLIENT_SECRET, encryptionKey: encryptionKeyReady, enabled: env.OAUTH_ENABLED === 'true' },
       cartEnabled: oauthReady && env.CATALOG_ENABLED === 'true' && env.CART_ENABLED === 'true'
     });
     if (path === '/api/cart' || (path === '/api/cart/confirm' && env.CART_ENABLED !== 'true')) return reply({ error: 'CART_DISABLED' }, 501);

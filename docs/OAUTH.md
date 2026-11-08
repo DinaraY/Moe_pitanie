@@ -1,13 +1,15 @@
 # Включение OAuth ВкусВилла
 
-Код OAuth реализован, но живой flow входа ещё не проверен. Публичный каталог через опубликованный Cloudflare Worker уже работает; прямой доступ из среды разработки получает Access Blocked. По умолчанию OAUTH_ENABLED=false. Адреса OAuth подтверждены живыми metadata; включать только после регистрации клиента, настройки и проверки.
+Код OAuth реализован, но живой flow входа ещё не проверен. Публичный каталог через опубликованный Cloudflare Worker уже работает; прямой доступ из среды разработки получает Access Blocked. Для moe-pitanie-2 OAUTH_ENABLED=true, но вход остаётся закрыт до наличия всех Secrets и корректной конфигурации; для отдельного staging/старого production флаг false. Адреса OAuth подтверждены живыми metadata; включать только после регистрации клиента, настройки и проверки.
 
 ## Регистрация и настройки
 
 1. В личном кабинете ВкусВилл установить точный адрес в Долгопрудном.
 2. На https://vkusvill.ru/oauth/registration/ зарегистрировать персонального клиента. Для production Redirect URI: **https://moe-pitanie-api.statusdi.workers.dev/oauth/callback**. Для нового moe-pitanie-2: **https://moe-pitanie-2.statusdi.workers.dev/oauth/callback**. Для отдельного staging: **https://moe-pitanie-api-staging.statusdi.workers.dev/oauth/callback**. Поддержку нескольких callback одним клиентом нужно подтвердить при регистрации; если зарегистрирован только production, staging OAuth не включать.
 3. В конфигурации уже установлены проверенные значения: VV_AUTHORIZATION_ENDPOINT=https://oauth.vkusvill.ru/oauth2/auth, VV_TOKEN_ENDPOINT=https://oauth.vkusvill.ru/oauth2/token, VV_SCOPE=catalog.search, VV_TOKEN_AUTH_METHOD=client_secret_post. Адреса и методы подтверждены [живыми metadata](https://oauth.vkusvill.ru/.well-known/oauth-authorization-server); scope и отправка client secret в body — [официальным CLI](https://github.com/vkustech/vkusvill-cli/blob/e49df83b43429c32cb5c9c6bbd6154757f72bb1a/src/auth.js). При регистрации разрешить минимальный доступ к каталогу, без истории, персональных скидок и offline_access. Refresh пока не реализован.
-4. После развёртывания кода через Wrangler открыть Cloudflare Dashboard → Workers & Pages → выбранный Worker → Settings → Variables and Secrets. Добавить Secrets: **VV_CLIENT_ID**, **VV_CLIENT_SECRET**, **TOKEN_ENCRYPTION_KEY**. Значения клиента — из письма ВкусВилла. Ключ — 32 случайных байта в base64url. Генерация на доверенном компьютере:
+4. После развёртывания кода через Wrangler открыть Cloudflare Dashboard → Workers & Pages → выбранный Worker → Settings → Variables and Secrets. Добавить Secrets: **VV_CLIENT_ID**, **VV_CLIENT_SECRET**, **TOKEN_ENCRYPTION_KEY**. Значения клиента — из письма ВкусВилла. Ключ — 32 случайных байта в base64url. С телефона откройте [страницу создания ключа](https://dinaray.github.io/Moe_pitanie/setup-key.html): ключ генерируется Web Crypto только в памяти вашего устройства, не отправляется по сети и не сохраняется в storage. Нажмите «Создать и скопировать ключ» и вставьте его только в Cloudflare Secret. Если ключ уже сохранён, не заменять его без необходимости.
+
+   Генерация на доверенном компьютере:
 
    ```sh
    node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
@@ -33,3 +35,5 @@
 Нужны живые проверки на телефоне: вход, отказ на consent, повторный/неверный state, истечение сессии, logout и изоляция пользователей. Подтвердить текущий scope и каталог адреса с помощью tools/list/search. Не записывать в логи заголовки, тело token exchange, callback query, идентификаторы сессий и персональные ответы. Автоматические тесты используют только фиктивные значения.
 
 Вход сам по себе не подтверждает наличие: у каждого товара оно известно только при авторизованном ответе и явном числовом available_quantity. Адаптер товаров, расчёты, двухдневное меню и подтверждение корзины реализованы по схеме официального CLI, но ещё требуют живой проверки из Cloudflare. CART_ENABLED по умолчанию false; /api/cart/confirm возвращает 501 до включения. /api/cart/draft выполняет только чтение и расчёт, требует действующую сессию.
+
+/api/status сообщает только наличие Client ID/Secret и валидность ключа (oauthSetup), без значений. Эти флаги нужны для сопровождения настройки.
