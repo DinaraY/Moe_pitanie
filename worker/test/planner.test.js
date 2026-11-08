@@ -1,0 +1,112 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { normalize, payload } from '../src/catalog.js';
+import { quote, totals } from '../../shared/food.js';
+import { buildPlan } from '../src/planner.js';
+import { createDraft, confirmDraft } from '../src/cart.js';
+import { environment } from './helpers.js';
+
+// Entirely synthetic fixtures, never shown as products in the application.
+const item = overrides => ({ id: 1, name: 'Тестовый товар', price: { current: 100 }, unit: 'шт', weight: { value: 180, unit: 'г' }, available_quantity: 20, category: [{ name: 'Готовые блюда' }], properties: [{ name: 'Пищевая и энергетическая ценность на 100 г', value: 'белки 10 г; жиры 4 г; углеводы 11 г; 120 ккал' }], ...overrides });
+const envelope = data => ({ content: [{ type: 'text', text: JSON.stringify({ ok: true, data }) }] });
+const tools = [
+  { name: 'vkusvill_products_search', inputSchema: { properties: { q: { type: 'string' } } } },
+  { name: 'vkusvill_product_details', inputSchema: { properties: { id: { type: 'integer' } } } },
+  { name: 'vkusvill_cart_link_create', inputSchema: { properties: { products: { items: { properties: { id: { type: 'integer' }, q: { type: 'number' } } } } } } }
+];
+function upstream(link = 'https://vkusvill.ru/?share_basket=test-fixture') {
+  let current = item(); let cartCalls = 0;
+  return {
+    change: overrides => { current = item(overrides); },
+    count: () => cartCalls,
+    async rpc(method, params) {
+      if (method === 'tools/list') return { tools };
+      if (params.name === 'vkusvill_product_details') return envelope({ ...current, id: params.arguments.id });
+      if (params.name === 'vkusvill_products_search') return envelope({ items: [current], meta: { personalized: true } });
+      if (params.name === 'vkusvill_cart_link_create') { cartCalls++; return envelope({ link }); }
+      throw new Error('unexpected call');
+    }
+  };
+}
+test('official fields preserve unknowns, zero macros and unit distinctions', () => {
+  const product = normalize(item(), true);
+  assert.equal(product.nutrition.kcal, 120);
+  assert.equal(product.availability, 'available');
+  assert.equal(normalize(item(), false).availability, 'unverified');
+  assert.equal(normalize(item({ price: {} }), true).price, null);
+  assert.equal(normalize(item({ weight: { value: 180, unit: 'мл' } }), true).packageGrams, null);
+  assert.equal(normalize(item({ available_quantity: null }), true).availability, 'unverified');
+  const zero = normalize(item({ properties: [{ name: 'Пищевая ценность на 100 г', value: 'белки 0 г, жиры 0 г, углеводы 0 г, 0 ккал' }] }), true);
+  assert.equal(zero.nutrition.protein, 0);
+  assert.equal(normalize(item({ properties: [{ name: 'Ценность', value: 'белки 10 г, жиры 4 г, углеводы 11 г, 120 ккал' }] }), true).nutrition, null);
+  assert.equal(normalize(item({ properties: [{ name: 'Ценность на 100 г', value: 'белки 10 г<br>другой производитель' }] }), true).nutrition, null);
+  assert.equal(normalize(item({ url: 'javascript:alert(1)' }), true).url, null);
+  assert.throws(() => payload({ content: [{ type: 'text', text: 'unstructured text' }] }));
+});
+test('portion calories and purchased packages are separate; missing data is never zero', () => {
+  const product = normalize(item(), true);
+  const entries = [{ product, grams: 100 }, { product, grams: 100 }];
+  const summary = quote(entries);
+  assert.equal(summary.lines.length, 1);
+  assert.equal(summary.lines[0].quantity, 2);
+  assert.equal(summary.lines[0].leftoverGrams, 160);
+  assert.equal(summary.total, 200);
+  assert.equal(summary.nutrition.kcal, 240);
+  assert.equal(quote([{ product: { ...product, price: null }, grams: 100 }]).total, null);
+  assert.equal(totals([{ product: { ...product, nutrition: null }, grams: 100 }]), null);
+  const weighted = quote([{ product: { ...product, unit: 'кг', packageGrams: null }, grams: 155 }]);
+  assert.equal(weighted.lines[0].quantity, 0.16);
+  assert.equal(weighted.total, 16);
+  assert.equal(weighted.estimated, true);
+});
+test('unavailable upstream leaves empty plan slots instead of fabricated meals', async () => {
+  const plan = await buildPlan(async () => { throw new Error('blocked'); }, tools, false);
+  assert.equal(plan.days.length, 2);
+  assert.equal(plan.problems.length, 9);
+  assert.ok(plan.days.every(d => d.meals.length === 4 && d.meals.every(m => m.items.every(i => i.product === null))));
+});
+test('plan contains two complete days only from products actually returned', async () => {
+  const queries = ['яйца', 'авокадо', 'помидоры', 'готовые блюда', 'йогурт', 'творог', 'яблоки', 'пастила', 'шоколад'];
+  let calls = 0;
+  const plan = await buildPlan(async (method, params) => {
+    calls++; const q = params.arguments.q;
+    return envelope({ items: [item({ id: queries.indexOf(q) + 1, name: q === 'яйца' ? 'Яйца тестовые' : q })], meta: { personalized: true } });
+  }, tools, true);
+  assert.equal(calls, 9);
+  assert.ok(plan.days.every(day => day.meals.length === 4 && day.meals.every(meal => meal.items.every(i => i.product && i.grams > 0))));
+  assert.ok(Object.values(plan.groups).every(pool => pool.length === 1));
+});
+test('draft ownership, explicit consent and duplicate confirmation', async () => {
+  const { env } = environment(); const store = upstream();
+  const session = { owner: 'test-owner', expiresAt: Date.now() + 3600000 };
+  const draft = await createDraft(env, session, store.rpc, tools, [{ id: 1, grams: 100 }]);
+  assert.ok(draft.id); assert.equal(store.count(), 0);
+  await assert.rejects(() => confirmDraft(env, session, store.rpc, tools, { ...draft, confirmed: false }), /CONFIRMATION_REQUIRED/);
+  assert.equal((await confirmDraft(env, { ...session, owner: 'other-owner' }, store.rpc, tools, { ...draft, confirmed: true })).error, 'DRAFT_EXPIRED');
+  const input = { id: draft.id, version: draft.version, confirmed: true };
+  const results = await Promise.all([confirmDraft(env, session, store.rpc, tools, input), confirmDraft(env, session, store.rpc, tools, input)]);
+  assert.equal(store.count(), 1);
+  assert.ok(results.some(r => r.link));
+  const replay = await confirmDraft(env, session, store.rpc, tools, input);
+  assert.ok(replay.link); assert.equal(store.count(), 1);
+});
+test('changed prices or availability require a new draft and new consent', async () => {
+  const { env } = environment(); const store = upstream();
+  const session = { owner: 'owner', expiresAt: Date.now() + 3600000 };
+  const draft = await createDraft(env, session, store.rpc, tools, [{ id: 1, grams: 100 }]);
+  store.change({ price: { current: 110 } });
+  assert.equal((await confirmDraft(env, session, store.rpc, tools, { ...draft, confirmed: true })).error, 'DRAFT_CHANGED');
+  assert.equal(store.count(), 0);
+  store.change({ available_quantity: 0 });
+  const missing = await createDraft(env, session, store.rpc, tools, [{ id: 1, grams: 100 }]);
+  assert.equal(missing.error, 'CART_INCOMPLETE');
+});
+test('unsafe returned links are rejected and a failed draft never calls again', async () => {
+  const { env } = environment(); const store = upstream('https://evil.example/checkout');
+  const session = { owner: 'owner', expiresAt: Date.now() + 3600000 };
+  const draft = await createDraft(env, session, store.rpc, tools, [{ id: 1, grams: 100 }]);
+  const input = { id: draft.id, version: draft.version, confirmed: true };
+  await assert.rejects(() => confirmDraft(env, session, store.rpc, tools, input), /UNSAFE_CART_LINK/);
+  assert.equal((await confirmDraft(env, session, store.rpc, tools, input)).error, 'DRAFT_ALREADY_USED');
+  assert.equal(store.count(), 1);
+});

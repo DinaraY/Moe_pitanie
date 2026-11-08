@@ -1,0 +1,8 @@
+{
+  "name": "moe-pitanie",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "npm --prefix worker test"
+  }
+}

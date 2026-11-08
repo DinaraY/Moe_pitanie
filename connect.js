@@ -1,0 +1,261 @@
+import { nutrients, totals, quote } from './shared/food.js';
+const servers = Object.freeze({
+  testing: 'https://moe-pitanie-2.statusdi.workers.dev',
+  production: 'https://moe-pitanie-api.statusdi.workers.dev',
+  staging: 'https://moe-pitanie-api-staging.statusdi.workers.dev'
+});
+const server = document.getElementById('server');
+const status = document.getElementById('status');
+const connect = document.getElementById('connect');
+const logout = document.getElementById('logout');
+const retry = document.getElementById('retry');
+let capabilities = {}, plan = null, draft = null, planRevision = 0;
+const planner = document.getElementById('planner');
+const basket = document.getElementById('basket');
+const build = document.getElementById('build');
+const prepare = document.getElementById('prepare');
+const confirm = document.getElementById('confirm');
+const approve = document.getElementById('approve');
+const planStatus = document.getElementById('plan-status');
+const cartStatus = document.getElementById('cart-status');
+const fragment = new URLSearchParams(location.hash.slice(1));
+// This is an opaque app session, never a VkusVill access/refresh token.
+let session = fragment.get('session');
+if (!/^[A-Za-z0-9_-]{43}$/.test(session || '')) session = null;
+const denied = fragment.get('auth') === 'denied';
+const returnedServer = fragment.get('server');
+history.replaceState(null, '', location.pathname + location.search);
+if (Object.hasOwn(servers, returnedServer)) server.value = returnedServer;
+let generation = 0;
+
+async function api(path, options = {}) {
+  const response = await fetch(servers[server.value] + path, {
+    ...options, credentials: 'omit', cache: 'no-store', redirect: 'error',
+    headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...(session ? { Authorization: `Bearer ${session}` } : {}) },
+    signal: AbortSignal.timeout(path === '/api/plan' || path.startsWith('/api/cart/') ? 65000 : 12000)
+  });
+  if (!response.headers.get('Content-Type')?.includes('application/json')) throw new Error('UNAVAILABLE');
+  const data = await response.json();
+  if (!response.ok) { const error = new Error(data.error || 'UNAVAILABLE'); error.data = data; throw error; }
+  return data;
+}
+async function check() {
+  const current = ++generation;
+  connect.disabled = true; retry.disabled = true; server.disabled = true;
+  status.textContent = 'Проверяем соединение…';
+  logout.hidden = !session;
+  try {
+    const state = await api('/api/status');
+    if (current !== generation) return;
+    if (state.service !== 'moe-pitanie-api') throw new Error('WRONG_SERVICE');
+    capabilities = state;
+    planner.hidden = !state.catalogEnabled;
+    connect.disabled = state.authorization !== 'available';
+    if (session) {
+      const account = await api('/api/session');
+      if (current !== generation) return;
+      if (!account.authenticated) throw new Error('SESSION_EXPIRED');
+      connect.disabled = true;
+      status.textContent = 'ВкусВилл подключён. Подберите товары: наличие по адресу будет проверено для каждой позиции.';
+    } else {
+      status.textContent = state.authorization === 'available'
+        ? 'Сервер готов к входу. Подтвердите доступ на сайте ВкусВилла.'
+        : 'Сервер доступен. Вход через ВкусВилл ещё не настроен владельцем приложения.';
+      if (denied) status.textContent += ' Доступ не был подтверждён.';
+    }
+  } catch {
+    if (current !== generation) return;
+    if (session) {
+      status.textContent = 'Не удалось проверить сессию. Повторите проверку или отключите её и войдите снова.';
+    } else {
+      status.textContent = 'Сервер пока недоступен или не обновлён. Примерное меню на главной странице продолжает работать.';
+    }
+  } finally {
+    if (current === generation) { retry.disabled = false; server.disabled = !!session; logout.hidden = !session; }
+  }
+}
+connect.addEventListener('click', () => {
+  if (!connect.disabled) location.assign(servers[server.value] + '/oauth/start');
+});
+logout.addEventListener('click', async () => {
+  logout.disabled = true;
+  try {
+    await api('/api/session', { method: 'DELETE' });
+    session = null;
+    clearPlan();
+    await check();
+    status.textContent = 'Сессия приложения отключена. Полностью отозвать доступ можно в настройках ВкусВилла.';
+  } catch { status.textContent = 'Не удалось отключить сессию на сервере. Повторите попытку; она также завершится по сроку действия.'; }
+  finally { logout.disabled = false; }
+});
+server.addEventListener('change', () => { clearPlan(); check(); });
+retry.addEventListener('click', check);
+
+const format = value => value === null || value === undefined ? 'нет данных' : new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 }).format(value);
+const money = value => value === null ? 'цена неизвестна' : `${format(value)} ₽`;
+const macroText = value => value ? `${format(value.kcal)} ккал · Б ${format(value.protein)} · Ж ${format(value.fat)} · У ${format(value.carbs)} г` : 'КБЖУ неизвестны или не указана масса порции';
+function element(tag, content, className) {
+  const node = document.createElement(tag); if (content !== undefined) node.textContent = content;
+  if (className) node.className = className; return node;
+}
+function invalidateDraft() {
+  planRevision++; draft = null; approve.checked = false; confirm.disabled = true;
+  document.getElementById('confirmation').hidden = true;
+  document.getElementById('draft').replaceChildren();
+  document.getElementById('cart-link').replaceChildren();
+  cartStatus.textContent = '';
+}
+function clearPlan() {
+  invalidateDraft(); plan = null; basket.hidden = true;
+  document.getElementById('days').replaceChildren();
+  planStatus.textContent = '';
+}
+const allItems = () => plan ? plan.days.flatMap(day => day.meals.flatMap(meal => meal.items)) : [];
+function entries() {
+  const items = allItems();
+  if (!items.length || items.some(item => !item.product || !Number.isFinite(item.grams) || item.grams <= 0 || item.grams > 5000)) return null;
+  return items.map(item => ({ product: item.product, grams: item.grams }));
+}
+function summaryView(summary) {
+  const box = element('div');
+  for (const line of summary.lines) {
+    const row = element('p');
+    row.append(element('strong', line.product.name), element('br'));
+    row.append(document.createTextNode(`${format(line.quantity)} ${line.product.unit || 'единиц'} × ${money(line.product.price)} = ${money(line.subtotal)}`));
+    if (line.leftoverGrams !== null) row.append(element('br'), element('small', `На меню ${format(line.grams)} г; расчётный остаток по массе упаковки ${format(line.leftoverGrams)} г.`));
+    if (!line.available) row.append(element('br'), element('small', 'Наличие нужного количества не подтверждено.'));
+    box.append(row);
+  }
+  box.append(element('strong', `${summary.estimated ? 'Предварительная сумма' : 'Сумма товаров'}: ${summary.total === null ? 'неизвестна' : money(summary.total)}`));
+  box.append(element('p', 'Доставка и итоговая стоимость уточняются во ВкусВилле.', 'muted'));
+  return box;
+}
+function renderPlan() {
+  const days = document.getElementById('days'); days.replaceChildren();
+  for (const day of plan.days) {
+    const section = element('section'); section.append(element('h3', `День ${day.day}`));
+    const dayEntries = [];
+    let complete = true;
+    for (const meal of day.meals) {
+      section.append(element('h4', meal.name));
+      for (const item of meal.items) {
+        const box = element('div'); box.style.cssText = 'padding:12px 0;border-bottom:1px solid #e1efe5';
+        box.append(element('strong', item.product?.name || `${item.label}: подходящий товар не найден`));
+        if (item.product) {
+          const p = item.product;
+          box.append(element('p', `${money(p.price)} / ${p.unit || 'единица неизвестна'} · ${p.packageGrams ? `${format(p.packageGrams)} г в упаковке` : 'масса упаковки неизвестна'}`));
+          box.append(element('p', p.nutrition ? `На 100 г: ${macroText(p.nutrition)}` : 'КБЖУ на 100 г не подтверждены.', 'muted'));
+          box.append(element('p', p.availability === 'available' ? `По адресу доступно: ${format(p.availableQuantity)} ${p.unit || ''}` : 'Наличие по адресу не подтверждено.', 'muted'));
+          const label = element('label', 'Съедаемая порция, г: ');
+          const input = element('input'); input.type = 'number'; input.min = '1'; input.max = '5000'; input.step = '1'; input.value = item.grams ?? ''; input.style.cssText = 'width:80px;font:inherit;padding:8px';
+          input.setAttribute('aria-label', `Порция: ${p.name}, день ${day.day}, ${meal.name}`);
+          input.addEventListener('change', () => {
+            item.grams = input.value && input.validity.valid ? Number(input.value) : null;
+            invalidateDraft(); renderPlan();
+          });
+          label.append(input); box.append(label);
+          box.append(element('p', `В порции: ${macroText(nutrients(p, item.grams))}`, 'muted'));
+          dayEntries.push({ product: p, grams: item.grams });
+          if (!item.grams) complete = false;
+          if (p.url) { const link = element('a', 'Карточка товара'); link.href = p.url; link.target = '_blank'; link.rel = 'noopener noreferrer'; box.append(element('br'), link); }
+          box.append(element('p', `Проверено: ${new Date(p.checkedAt).toLocaleString('ru-RU')}`, 'muted'));
+        } else complete = false;
+        const pool = plan.groups[item.group] || [];
+        const replace = element('button', 'Заменить'); replace.className = 'secondary'; replace.disabled = pool.length < 2;
+        replace.addEventListener('click', () => {
+          const index = pool.findIndex(p => p.id === item.product?.id);
+          item.product = pool[(index + 1) % pool.length];
+          if (item.group === 'ready' || item.group === 'yogurt') item.grams = item.product.packageGrams;
+          invalidateDraft(); renderPlan();
+        });
+        box.append(replace);
+        const alternative = element('details'); alternative.append(element('summary', 'Найти другую позицию'));
+        const query = element('input'); query.type = 'search'; query.maxLength = 120; query.placeholder = item.label;
+        query.setAttribute('aria-label', `Поиск замены: ${item.label}, день ${day.day}, ${meal.name}`);
+        query.style.cssText = 'font:inherit;max-width:100%;box-sizing:border-box;padding:8px;margin:8px 0';
+        const find = element('button', 'Найти'); find.className = 'secondary';
+        const results = element('div'); results.setAttribute('aria-live', 'polite');
+        find.addEventListener('click', async () => {
+          if (!query.value.trim() || find.disabled) return;
+          find.disabled = true; results.replaceChildren(element('p', 'Ищем в каталоге…'));
+          const revision = planRevision;
+          try {
+            const response = await api('/api/search', { method: 'POST', body: JSON.stringify({ query: query.value.trim() }) });
+            if (revision !== planRevision || !box.isConnected) return;
+            results.replaceChildren();
+            for (const product of response.products) {
+              const candidate = element('div'); candidate.append(element('p', `${product.name} · ${money(product.price)} / ${product.unit || '?'}`));
+              candidate.append(element('p', product.nutrition ? `На 100 г: ${macroText(product.nutrition)}` : 'КБЖУ на 100 г неизвестны.', 'muted'));
+              const choose = element('button', product.availability === 'unavailable' ? 'Нет в наличии' : 'Выбрать'); choose.disabled = product.availability === 'unavailable';
+              choose.addEventListener('click', () => {
+                item.product = product;
+                if (item.group === 'ready' || item.group === 'yogurt') item.grams = product.packageGrams;
+                else if (!item.grams) item.grams = 100;
+                invalidateDraft(); renderPlan();
+              });
+              candidate.append(choose); results.append(candidate);
+            }
+            if (!response.products.length) results.append(element('p', 'Ничего не найдено. Попробуйте другой запрос.'));
+          } catch { if (box.isConnected && revision === planRevision) results.replaceChildren(element('p', 'Поиск недоступен. Попробуйте позже.')); }
+          finally { find.disabled = false; }
+        });
+        alternative.append(query, find, results); box.append(alternative); section.append(box);
+      }
+    }
+    section.append(element('p', `Итого за день: ${macroText(complete ? totals(dayEntries) : null)}`));
+    days.append(section);
+  }
+  const selected = entries(); const preview = document.getElementById('shopping-preview');
+  preview.replaceChildren(); basket.hidden = false; prepare.disabled = !selected;
+  if (selected) preview.append(summaryView(quote(selected)));
+  else preview.append(element('p', 'Для полного списка заполните все позиции и массы порций. Если товар не найден, повторите подбор позже.'));
+}
+build.addEventListener('click', async () => {
+  if (build.disabled) return;
+  build.disabled = true; clearPlan(); const revision = planRevision;
+  planStatus.textContent = 'Ищем товары для девяти групп. Это может занять до минуты…';
+  try {
+    const result = await api('/api/plan', { method: 'POST', body: '{}' });
+    if (revision !== planRevision) return;
+    plan = result; renderPlan();
+    const missing = allItems().filter(item => !item.product).length;
+    planStatus.textContent = missing ? `Не удалось заполнить ${missing} позиций. Отсутствующие данные не подставлены.` : 'Товары подобраны. Проверьте порции, КБЖУ и замены.';
+  } catch { if (revision === planRevision) planStatus.textContent = 'Каталог недоступен или его формат изменился. Попробуйте позже; примерное меню на главной продолжает работать.'; }
+  finally { build.disabled = false; }
+});
+prepare.addEventListener('click', async () => {
+  if (!session) { cartStatus.textContent = 'Для проверки наличия и корзины сначала подключите ВкусВилл.'; return; }
+  const selected = entries(); if (!selected || prepare.disabled) return;
+  invalidateDraft(); const revision = planRevision; prepare.disabled = true;
+  cartStatus.textContent = 'Повторно проверяем цены, упаковки и наличие…';
+  try {
+    const result = await api('/api/cart/draft', { method: 'POST', body: JSON.stringify({ entries: selected.map(e => ({ id: e.product.id, grams: e.grams })) }) });
+    if (revision !== planRevision) return;
+    draft = result;
+    document.getElementById('draft').append(summaryView(draft.summary));
+    document.getElementById('confirmation').hidden = false;
+    cartStatus.textContent = capabilities.cartEnabled ? `Проверьте свежий расчёт. Подтверждение действует до ${new Date(draft.expiresAt).toLocaleTimeString('ru-RU')}.` : 'Цены и наличие проверены. Создание ссылки пока выключено владельцем приложения.';
+  } catch (error) {
+    if (revision !== planRevision) return;
+    if (error.data?.summary) document.getElementById('draft').append(summaryView(error.data.summary));
+    cartStatus.textContent = 'Полную корзину подтвердить нельзя: не хватает данных, наличия или соединения. Проверьте позиции и повторите проверку.';
+  } finally { prepare.disabled = !entries(); }
+});
+approve.addEventListener('change', () => { confirm.disabled = !approve.checked || !draft || !capabilities.cartEnabled || draft.expiresAt <= Date.now(); });
+confirm.addEventListener('click', async () => {
+  if (confirm.disabled || !approve.checked || !draft || draft.expiresAt <= Date.now()) return;
+  confirm.disabled = true; prepare.disabled = true; build.disabled = true;
+  const revision = planRevision;
+  try {
+    const result = await api('/api/cart/confirm', { method: 'POST', body: JSON.stringify({ id: draft.id, version: draft.version, confirmed: true }) });
+    if (revision !== planRevision) return;
+    const url = new URL(result.link);
+    if (url.protocol !== 'https:' || !['vkusvill.ru', 'www.vkusvill.ru'].includes(url.hostname) || url.username || url.password || url.port) throw new Error('UNSAFE_LINK');
+    const link = element('a', 'Открыть корзину во ВкусВилле →'); link.href = url.href; link.target = '_blank'; link.rel = 'noopener noreferrer';
+    document.getElementById('cart-link').replaceChildren(link);
+    cartStatus.textContent = 'Ссылка создана. Заказ не оформлен; проверьте корзину и оплатите во ВкусВилле.';
+    document.getElementById('confirmation').hidden = true;
+  } catch { if (revision === planRevision) cartStatus.textContent = 'Ссылка не получена либо данные изменились. Сначала заново проверьте цены и наличие, затем подтвердите новую корзину.'; }
+  finally { prepare.disabled = !entries(); build.disabled = false; }
+});
+check();
