@@ -49,7 +49,7 @@ export async function buildPlan(rpc, tools, authenticated) {
       const items = keys.map(key => {
         const group = GROUPS.find(g => g.key === key);
         const pool = groups[key];
-        const index = key === 'ready' ? day * 2 + (name === 'Ужин' ? 1 : 0) : day;
+        const index = key === 'ready' ? day * 2 + (name === 'Ужин' ? 1 : 0) : ['eggs', 'avocado', 'vegetables'].includes(key) ? 0 : day;
         const product = pool[index % pool.length] || null;
         return { group: key, label: group.label, product, grams: product ? group.grams || product.packageGrams || null : null };
       });

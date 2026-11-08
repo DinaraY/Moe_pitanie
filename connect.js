@@ -1,4 +1,4 @@
-import { nutrients, totals, quote } from './shared/food.js';
+import { nutrients, totals, nutrientBounds, totalBounds, quote } from './shared/food.js';
 const servers = Object.freeze({
   testing: 'https://moe-pitanie-2.statusdi.workers.dev',
   production: 'https://moe-pitanie-api.statusdi.workers.dev',
@@ -94,6 +94,14 @@ retry.addEventListener('click', check);
 const format = value => value === null || value === undefined ? 'нет данных' : new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 }).format(value);
 const money = value => value === null ? 'цена неизвестна' : `${format(value)} ₽`;
 const macroText = value => value ? `${format(value.kcal)} ккал · Б ${format(value.protein)} · Ж ${format(value.fat)} · У ${format(value.carbs)} г` : 'КБЖУ неизвестны или не указана масса порции';
+const rangeText = bounds => {
+  const f = value => value.min === value.max ? format(value.min) : `${format(value.min)}–${format(value.max)}`;
+  return `${f(bounds.kcal)} ккал · Б ${f(bounds.protein)} · Ж ${f(bounds.fat)} · У ${f(bounds.carbs)} г (диапазон по производителям)`;
+};
+const nutritionText = (product, grams = 100) => {
+  const exact = nutrients(product, grams); if (exact) return macroText(exact);
+  const bounds = nutrientBounds(product, grams); return bounds ? rangeText(bounds) : macroText(null);
+};
 function element(tag, content, className) {
   const node = document.createElement(tag); if (content !== undefined) node.textContent = content;
   if (className) node.className = className; return node;
@@ -143,8 +151,14 @@ function renderPlan() {
         box.append(element('strong', item.product?.name || `${item.label}: подходящий товар не найден`));
         if (item.product) {
           const p = item.product;
-          box.append(element('p', `${money(p.price)} / ${p.unit || 'единица неизвестна'} · ${p.packageGrams ? `${format(p.packageGrams)} г в упаковке` : 'масса упаковки неизвестна'}`));
-          box.append(element('p', p.nutrition ? `На 100 г: ${macroText(p.nutrition)}` : 'КБЖУ на 100 г не подтверждены.', 'muted'));
+          box.append(element('p', `${money(p.price)} / ${p.unit || 'единица неизвестна'} · ${p.unit === 'кг' ? 'весовой товар' : p.packageGrams ? `${format(p.packageGrams)} г в упаковке` : 'масса упаковки неизвестна'}`));
+          box.append(element('p', `На 100 г: ${nutritionText(p)}`, 'muted'));
+          if (p.nutritionRange) {
+            const variants = element('details'); variants.append(element('summary', 'КБЖУ разных производителей'));
+            for (const [index, variant] of p.nutritionVariants.entries()) variants.append(element('p', `${variant.manufacturer || `Вариант ${index + 1}`}: ${macroText(variant)} на 100 г`));
+            variants.append(element('small', 'Точные значения вашей упаковки указаны на этикетке.'));
+            box.append(variants);
+          }
           box.append(element('p', p.availability === 'available' ? `По адресу доступно: ${format(p.availableQuantity)} ${p.unit || ''}` : 'Наличие по адресу не подтверждено.', 'muted'));
           const label = element('label', 'Съедаемая порция, г: ');
           const input = element('input'); input.type = 'number'; input.min = '1'; input.max = '5000'; input.step = '1'; input.value = item.grams ?? ''; input.style.cssText = 'width:80px;font:inherit;padding:8px';
@@ -154,7 +168,7 @@ function renderPlan() {
             invalidateDraft(); renderPlan();
           });
           label.append(input); box.append(label);
-          box.append(element('p', `В порции: ${macroText(nutrients(p, item.grams))}`, 'muted'));
+          box.append(element('p', `В порции: ${nutritionText(p, item.grams)}`, 'muted'));
           dayEntries.push({ product: p, grams: item.grams });
           if (!item.grams) complete = false;
           if (p.url) { const link = element('a', 'Карточка товара'); link.href = p.url; link.target = '_blank'; link.rel = 'noopener noreferrer'; box.append(element('br'), link); }
@@ -185,7 +199,7 @@ function renderPlan() {
             results.replaceChildren();
             for (const product of response.products) {
               const candidate = element('div'); candidate.append(element('p', `${product.name} · ${money(product.price)} / ${product.unit || '?'}`));
-              candidate.append(element('p', product.nutrition ? `На 100 г: ${macroText(product.nutrition)}` : 'КБЖУ на 100 г неизвестны.', 'muted'));
+              candidate.append(element('p', `На 100 г: ${nutritionText(product)}`, 'muted'));
               const choose = element('button', product.availability === 'unavailable' ? 'Нет в наличии' : 'Выбрать'); choose.disabled = product.availability === 'unavailable';
               choose.addEventListener('click', () => {
                 item.product = product;
@@ -202,7 +216,9 @@ function renderPlan() {
         alternative.append(query, find, results); box.append(alternative); section.append(box);
       }
     }
-    section.append(element('p', `Итого за день: ${macroText(complete ? totals(dayEntries) : null)}`));
+    const exact = complete ? totals(dayEntries) : null;
+    const bounds = complete && !exact ? totalBounds(dayEntries) : null;
+    section.append(element('p', `Итого за день: ${exact ? macroText(exact) : bounds ? rangeText(bounds) : macroText(null)}`));
     days.append(section);
   }
   const selected = entries(); const preview = document.getElementById('shopping-preview');
