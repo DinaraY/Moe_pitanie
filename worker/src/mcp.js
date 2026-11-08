@@ -6,11 +6,11 @@ export async function withMcp(operation, transport = fetch, accessToken) {
   let session;
   let version = '2025-06-18';
   let sequence = 0;
-  const sessionSignal = AbortSignal.timeout(60000);
+  const deadline = Date.now() + 60000;
   async function rpc(method, params, notification = false) {
     const id = ++sequence;
     const response = await transport(ENDPOINT, {
-      method: 'POST', redirect: 'error', signal: AbortSignal.any([sessionSignal, AbortSignal.timeout(15000)]),
+      method: 'POST', redirect: 'error', signal: AbortSignal.timeout(Math.max(1, Math.min(15000, deadline - Date.now()))),
       headers: {
         'Content-Type': 'application/json', Accept: 'application/json, text/event-stream',
         'MCP-Protocol-Version': version,
@@ -57,7 +57,11 @@ export async function withMcp(operation, transport = fetch, accessToken) {
   }
   try {
     const info = await rpc('initialize', { protocolVersion: version, capabilities: {}, clientInfo: { name: 'moe-pitanie', version: '0.1.0' } });
-    if (!['2025-06-18', '2025-03-26'].includes(info.protocolVersion)) throw new Error('UNSUPPORTED_PROTOCOL');
+    if (!['2025-06-18', '2025-03-26'].includes(info.protocolVersion)) {
+      const error = new Error('UNSUPPORTED_PROTOCOL');
+      error.protocolVersion = /^\d{4}-\d{2}-\d{2}$/.test(info.protocolVersion || '') ? info.protocolVersion : undefined;
+      throw error;
+    }
     version = info.protocolVersion;
     await rpc('notifications/initialized', {}, true);
     return await operation(rpc);
