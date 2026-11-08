@@ -10,7 +10,7 @@ export async function withMcp(operation, transport = fetch, accessToken) {
   async function rpc(method, params, notification = false) {
     const id = ++sequence;
     const response = await transport(ENDPOINT, {
-      method: 'POST', redirect: 'error', signal: AbortSignal.timeout(Math.max(1, Math.min(15000, deadline - Date.now()))),
+      method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(Math.max(1, Math.min(15000, deadline - Date.now()))),
       headers: {
         'Content-Type': 'application/json', Accept: 'application/json, text/event-stream',
         'MCP-Protocol-Version': version,
@@ -66,6 +66,6 @@ export async function withMcp(operation, transport = fetch, accessToken) {
     await rpc('notifications/initialized', {}, true);
     return await operation(rpc);
   } finally {
-    if (session) await transport(ENDPOINT, { method: 'DELETE', redirect: 'error', signal: AbortSignal.timeout(2000), headers: { 'Mcp-Session-Id': session, 'MCP-Protocol-Version': version, ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) } }).then(r => r.body?.cancel()).catch(() => {});
+    if (session) await transport(ENDPOINT, { method: 'DELETE', redirect: 'manual', signal: AbortSignal.timeout(2000), headers: { 'Mcp-Session-Id': session, 'MCP-Protocol-Version': version, ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) } }).then(r => r.body?.cancel()).catch(() => {});
   }
 }

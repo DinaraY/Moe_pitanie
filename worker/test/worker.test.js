@@ -41,6 +41,7 @@ test('MCP initializes session, handles SSE and closes session without credential
   const calls = [];
   const transport = async (url, options) => {
     calls.push(options);
+    assert.equal(options.redirect, 'manual');
     assert.equal(url, 'https://mcp.vkusvill.ru/mcp');
     assert.equal(options.headers.Authorization, undefined);
     if (options.method === 'DELETE') return new Response(null, { status: 204 });
@@ -52,4 +53,14 @@ test('MCP initializes session, handles SSE and closes session without credential
   };
   assert.deepEqual(await withMcp(rpc => rpc('tools/list', {}), transport), { tools: [] });
   assert.equal(calls.at(-1).method, 'DELETE');
+});
+test('MCP redirects are rejected without following the Location', async () => {
+  let calls = 0;
+  await assert.rejects(() => withMcp(async () => {}, async (url, options) => {
+    calls++;
+    assert.equal(url, 'https://mcp.vkusvill.ru/mcp');
+    assert.equal(options.redirect, 'manual');
+    return new Response(null, { status: 307, headers: { Location: 'https://evil.example/' } });
+  }), error => error.upstreamStatus === 307);
+  assert.equal(calls, 1);
 });
