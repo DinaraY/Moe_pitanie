@@ -1,0 +1,47 @@
+{
+  "name": "moe-pitanie-2",
+  "main": "worker/src/index.js",
+  "compatibility_date": "2026-11-08",
+  "workers_dev": true,
+  "keep_vars": true,
+  "vars": {
+    "ALLOWED_ORIGIN": "https://dinaray.github.io",
+    "CATALOG_ENABLED": "true",
+    "OAUTH_ENABLED": "false",
+    "CART_ENABLED": "false",
+    "VV_AUTHORIZATION_ENDPOINT": "https://oauth.vkusvill.ru/oauth2/auth",
+    "VV_TOKEN_ENDPOINT": "https://oauth.vkusvill.ru/oauth2/token",
+    "VV_SCOPE": "catalog.search",
+    "VV_TOKEN_AUTH_METHOD": "client_secret_post",
+    "APP_ENV": "staging",
+    "APP_RETURN_URL": "https://dinaray.github.io/Moe_pitanie/connect.html",
+    "VV_REDIRECT_URI": "https://moe-pitanie-2.statusdi.workers.dev/oauth/callback",
+    "APP_SERVER": "testing"
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "AUTH_STORE",
+        "class_name": "AuthStore"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "AuthStore"
+      ]
+    }
+  ],
+  "ratelimits": [
+    {
+      "name": "CATALOG_LIMITER",
+      "namespace_id": "1002",
+      "simple": {
+        "limit": 10,
+        "period": 60
+      }
+    }
+  ]
+}

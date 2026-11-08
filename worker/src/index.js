@@ -35,6 +35,7 @@ export function createWorker(connect = withMcp) {
     if (origin && origin !== env.ALLOWED_ORIGIN) return reply({ error: 'ORIGIN_DENIED' }, 403);
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: { ...headers, 'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, Authorization' } });
     const path = new URL(request.url).pathname;
+    if (path === '/' && request.method === 'GET') return reply({ service: 'moe-pitanie-api', message: 'Сервер приложения работает. Состояние подключения: /api/status' });
     let oauthReady = false;
     try { configuration(env); oauthReady = true; } catch {}
     if (path === '/api/status' && request.method === 'GET') return reply({
@@ -95,7 +96,7 @@ export function createWorker(connect = withMcp) {
     } catch (error) {
       const validation = ['INVALID_PLAN', 'INVALID_PORTION', 'TOO_MANY_PRODUCTS', 'CONFIRMATION_REQUIRED'];
       if (validation.includes(error.message)) return reply({ error: error.message }, 400);
-      return reply({ error: 'MCP_UNAVAILABLE', message: 'Каталог недоступен или его формат изменился. Данные магазина не подставлены.' }, 502);
+      return reply({ error: 'MCP_UNAVAILABLE', upstreamStatus: Number.isInteger(error.upstreamStatus) ? error.upstreamStatus : undefined, message: 'Каталог недоступен или его формат изменился. Данные магазина не подставлены.' }, 502);
     }
   }};
 }

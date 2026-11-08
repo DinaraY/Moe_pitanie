@@ -15,7 +15,8 @@
     "VV_TOKEN_AUTH_METHOD": "client_secret_post",
     "APP_ENV": "production",
     "APP_RETURN_URL": "https://dinaray.github.io/Moe_pitanie/connect.html",
-    "VV_REDIRECT_URI": "https://moe-pitanie-api.statusdi.workers.dev/oauth/callback"
+    "VV_REDIRECT_URI": "https://moe-pitanie-api.statusdi.workers.dev/oauth/callback",
+    "APP_SERVER": "production"
   },
   "durable_objects": {
     "bindings": [

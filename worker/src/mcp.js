@@ -19,7 +19,11 @@ export async function withMcp(operation, transport = fetch, accessToken) {
       },
       body: JSON.stringify({ jsonrpc: '2.0', ...(notification ? {} : { id }), method, params })
     });
-    if (!response.ok) throw new Error('UPSTREAM_UNAVAILABLE');
+    if (!response.ok) {
+      const error = new Error('UPSTREAM_UNAVAILABLE');
+      error.upstreamStatus = response.status;
+      throw error;
+    }
     session = response.headers.get('Mcp-Session-Id') || session;
     if (notification) { await response.body?.cancel(); return; }
     const reader = response.body.getReader();

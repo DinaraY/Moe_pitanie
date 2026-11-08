@@ -1,5 +1,6 @@
 import { nutrients, totals, quote } from './shared/food.js';
 const servers = Object.freeze({
+  testing: 'https://moe-pitanie-2.statusdi.workers.dev',
   production: 'https://moe-pitanie-api.statusdi.workers.dev',
   staging: 'https://moe-pitanie-api-staging.statusdi.workers.dev'
 });
@@ -22,9 +23,9 @@ const fragment = new URLSearchParams(location.hash.slice(1));
 let session = fragment.get('session');
 if (!/^[A-Za-z0-9_-]{43}$/.test(session || '')) session = null;
 const denied = fragment.get('auth') === 'denied';
-const staging = fragment.get('server') === 'staging';
+const returnedServer = fragment.get('server');
 history.replaceState(null, '', location.pathname + location.search);
-if (staging) server.value = 'staging';
+if (Object.hasOwn(servers, returnedServer)) server.value = returnedServer;
 let generation = 0;
 
 async function api(path, options = {}) {

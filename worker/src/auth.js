@@ -112,7 +112,8 @@ export async function oauth(request, env, transport = fetch) {
   if (flow.browserHash !== await digest(browser)) throw new Error('INVALID_OAUTH_STATE');
   const consumed = await storage(env, state, 'consume');
   if (!consumed.record) throw new Error('INVALID_OAUTH_STATE');
-  const server = env.APP_ENV === 'staging' ? '&server=staging' : '';
+  const serverName = ['production', 'staging', 'testing'].includes(env.APP_SERVER) ? env.APP_SERVER : env.APP_ENV === 'staging' ? 'staging' : 'production';
+  const server = serverName === 'production' ? '' : '&server=' + serverName;
   if (url.searchParams.has('error')) return redirect(config.returnUrl + '#auth=denied' + server, { 'Set-Cookie': cookie('', 0) });
   const code = url.searchParams.get('code');
   if (!code || code.length > 4096) throw new Error('INVALID_OAUTH_CODE');

@@ -21,7 +21,7 @@
 - [Статья команды ВкусВилла](https://habr.com/ru/companies/vkusvill/articles/1094732/): персональная регистрация клиента, адрес доставки в личном кабинете.
 - [Спецификация авторизации MCP](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization).
 
-Прямой MCP initialize и protected-resource metadata из среды разработки по-прежнему получают HTML Access Blocked. Проверка OAuth metadata по правильному issuer успешна. Живые tools/list, ответы товаров, поиск по адресу, OAuth вход и cart-link пока не проверены. Поэтому CATALOG_ENABLED, OAUTH_ENABLED и CART_ENABLED по умолчанию false. При изменившейся схеме операция отклоняется, данные не выдумываются.
+Прямой MCP initialize и protected-resource metadata из среды разработки по-прежнему получают HTML Access Blocked. Проверка OAuth metadata по правильному issuer успешна. Живые tools/list, ответы товаров, поиск по адресу, OAuth вход и cart-link пока не проверены. Для нового тестового moe-pitanie-2 публичный CATALOG_ENABLED=true, чтобы проверить доступ из Cloudflare. OAUTH_ENABLED и CART_ENABLED=false. В отдельных staging/production-конфигурациях все флаги false. При изменившейся схеме операция отклоняется, данные не выдумываются.
 
 ## API
 
@@ -52,8 +52,8 @@
 npm test
 npx wrangler@4 login
 npx wrangler@4 whoami
-npx wrangler@4 deploy --dry-run
-npx wrangler@4 deploy
+npx wrangler@4 deploy --config wrangler.staging.jsonc --dry-run
+npx wrangler@4 deploy --config wrangler.staging.jsonc
 ```
 
 Это создаёт **moe-pitanie-api-staging**. Для существующего production использовать отдельную конфигурацию:
