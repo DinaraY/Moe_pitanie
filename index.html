@@ -2,15 +2,115 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Моё питание</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Моё питание 🌿</title>
+<style>
+body{font-family:-apple-system,Arial,sans-serif;background:#f2f8f3;color:#263c2c;margin:0;padding:16px}
+main{max-width:550px;margin:auto}
+.card{background:white;border-radius:18px;padding:18px;margin:14px 0}
+h1{color:#287b48}h2{font-size:20px}
+input,select{padding:10px;border:1px solid #ccc;border-radius:8px;max-width:100%}
+button{background:#287b48;color:white;border:0;border-radius:10px;padding:12px;margin:5px}
+.item{padding:9px 0;border-bottom:1px solid #eee}
+.meal{padding:10px 0;border-bottom:1px solid #eee}
+small{color:#66776b}
+</style>
 </head>
-<body style="font-family:Arial; padding:24px; background:#f1f8f1;">
-  <h1>🌿 Моё питание ❤️</h1>
-  <h2>Привет!</h2>
-  <p>Мой вес: 72 кг</p>
-  <p>Моя цель: 65 кг</p>
-  <p>Скоро здесь будет моё меню и покупки во ВкусВилле.</p>
+<body>
+<main>
+<div class="card">
+<h1>🌿 Моё питание ❤️</h1>
+<p>Мой персональный помощник</p>
+</div>
+
+<div class="card">
+<h2>⚖️ Мои параметры</h2>
+<p>Возраст: <input id="age" type="number" value="43"></p>
+<p>Рост: <input id="height" type="number" value="167"></p>
+<p>Вес: <input id="weight" type="number" value="72"></p>
+<p>Цель: <input id="goal" type="number" value="65"></p>
+<button onclick="calculate()">Рассчитать калории</button>
+<h2 id="result"></h2>
+<small>Расчёт приблизительный, для сидячей работы и небольшой активности. Предполагается женская формула.</small>
+</div>
+
+<div class="card">
+<h2>🍽 Меню на неделю</h2>
+<select id="day" onchange="showMenu()"></select>
+<div id="menu"></div>
+<small>Это идеи блюд. Порции и перекусы нужно подбирать под индивидуальную норму калорий.</small>
+</div>
+
+<div class="card">
+<h2>🛒 Покупки во ВкусВилле</h2>
+<p>Отметь продукты, которые уже есть дома:</p>
+<div id="products"></div>
+<button onclick="copyProducts()">Скопировать список</button>
+<p><a href="https://vkusvill.ru/" target="_blank">Открыть ВкусВилл →</a></p>
+<small>Автоматическая корзина пока не подключена.</small>
+</div>
+
+<div class="card">
+<h2>🚶‍♀️ Моя активность</h2>
+<p>Цель: постепенно увеличивать шаги, если колени хорошо переносят ходьбу.</p>
+<small>Не пользуйся дорожкой, пока полотно проскальзывает.</small>
+</div>
+</main>
+<script>
+const days=["Пн","Вт","Ср","Чт","Пт","Сб","Вс"];
+const meals=[
+["Овсянка с ягодами","Курица с гречкой","Рыба с овощами"],
+["Омлет","Индейка с рисом","Творог с фруктами"],
+["Йогурт с овсянкой","Рыба с картофелем","Курица с салатом"],
+["Творог с ягодами","Куриный суп","Омлет с овощами"],
+["Овсянка с бананом","Индейка с гречкой","Рыба с салатом"],
+["Яйца с хлебом","Курица с рисом","Творог с орехами"],
+["Йогурт с фруктами","Рыба с булгуром","Индейка с овощами"]
+];
+const groceries=["Овсянка","Ягоды","Йогурт","Яйца","Курица","Индейка","Рыба","Творог","Гречка","Рис","Булгур","Картофель","Овощи","Фрукты","Орехи","Хлеб"];
+let saved={};
+try{saved=JSON.parse(localStorage.getItem("foodData")||"{}")}catch(e){}
+["age","height","weight","goal"].forEach(id=>{
+if(saved[id])document.getElementById(id).value=saved[id];
+});
+function calculate(){
+let age=+document.getElementById("age").value;
+let h=+document.getElementById("height").value;
+let w=+document.getElementById("weight").value;
+let goal=+document.getElementById("goal").value;
+if(age<=0||h<=0||w<=0||goal<=0)return;
+let bmr=10*w+6.25*h-5*age-161;
+let kcal=Math.round((bmr*1.3-300)/50)*50;
+document.getElementById("result").textContent="Ориентир: "+kcal+" ккал/день";
+localStorage.setItem("foodData",JSON.stringify({age,height:h,weight:w,goal}));
+}
+const selector=document.getElementById("day");
+days.forEach((d,i)=>selector.add(new Option(d,i)));
+function showMenu(){
+document.getElementById("menu").innerHTML=meals[selector.value].map((m,i)=>"<div class='meal'><b>"+["Завтрак","Обед","Ужин"][i]+"</b>: "+m+"</div>").join("");
+}
+showMenu();calculate();
+let checked={};
+try{checked=JSON.parse(localStorage.getItem("foodChecked")||"{}")}catch(e){}
+function renderProducts(){
+let box=document.getElementById("products");box.innerHTML="";
+groceries.forEach((p,i)=>{
+let label=document.createElement("label");
+label.className="item";label.style.display="block";
+let cb=document.createElement("input");cb.type="checkbox";
+cb.checked=!!checked[i];
+cb.onchange=()=>{checked[i]=cb.checked;localStorage.setItem("foodChecked",JSON.stringify(checked))};
+label.append(cb,document.createTextNode(" "+p));box.append(label);
+});
+}
+function copyProducts(){
+let list=groceries.filter((p,i)=>!checked[i]).join("\n");
+if(navigator.clipboard)navigator.clipboard.writeText(list).then(()=>alert("Список скопирован")).catch(()=>prompt("Скопируй список",list));
+else prompt("Скопируй список",list);
+}
+renderProducts();
+</script>
 </body>
 </html>
+
