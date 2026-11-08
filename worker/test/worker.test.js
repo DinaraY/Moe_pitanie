@@ -25,6 +25,17 @@ test('unconfigured OAuth and invalid app sessions fail closed without public fal
   assert.equal(status.authorization, 'not_configured');
   assert.equal(status.cartEnabled, false);
 });
+test('setup status exposes only presence flags, never secret values', async () => {
+  const worker = createWorker();
+  const response = await worker.fetch(request('/api/status'), {
+    ...env, VV_CLIENT_ID: 'test-id-private', VV_CLIENT_SECRET: 'test-secret-private', TOKEN_ENCRYPTION_KEY: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+  });
+  const body = await response.text(); const data = JSON.parse(body);
+  assert.deepEqual(data.oauthSetup, { clientId: true, clientSecret: true, encryptionKey: true, enabled: false });
+  assert.ok(!body.includes('test-id-private'));
+  assert.ok(!body.includes('test-secret-private'));
+  assert.ok(!body.includes('AAAAAAAA'));
+});
 test('live data has provenance, unknown delivery; HTML upstream errors are hidden', async () => {
   const worker = createWorker(async operation => operation(async method => method === 'tools/list' ? { tools: [{ name: 'vkusvill_products_search' }, { name: 'vkusvill_orders_history' }] } : { content: [{ type: 'text', text: 'fixture' }] }));
   const tools = await (await worker.fetch(request('/api/tools'), env)).json();

@@ -22,7 +22,7 @@
 - [Cloudflare Request](https://developers.cloudflare.com/workers/runtime-apis/request/): исходящие запросы используют redirect:manual с отказом на 3xx; redirect:error не поддерживается Workers.
 - [Спецификация авторизации MCP](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization).
 
-Прямой MCP initialize и protected-resource metadata из среды разработки по-прежнему получают HTML Access Blocked. Проверка OAuth metadata по правильному issuer успешна. После публикации через GitHub проверены живые tools/list (HTTP 200), поиск йогурта (10 реальных товаров с ценами/массой/КБЖУ), карточки и двухдневный план (все 9 групп заполнены, ошибок нет). Наличие по адресу, OAuth вход и cart-link пока не проверены. Для нового тестового moe-pitanie-2 публичный CATALOG_ENABLED=true, чтобы проверить доступ из Cloudflare. OAUTH_ENABLED и CART_ENABLED=false. В отдельных staging/production-конфигурациях все флаги false. При изменившейся схеме операция отклоняется, данные не выдумываются.
+Прямой MCP initialize и protected-resource metadata из среды разработки по-прежнему получают HTML Access Blocked. Проверка OAuth metadata по правильному issuer успешна. После публикации через GitHub проверены живые tools/list (HTTP 200), поиск йогурта (10 реальных товаров с ценами/массой/КБЖУ), карточки и двухдневный план (все 9 групп заполнены, ошибок нет). Наличие по адресу, OAuth вход и cart-link пока не проверены. Для нового тестового moe-pitanie-2 публичный CATALOG_ENABLED=true, чтобы проверить доступ из Cloudflare. OAUTH_ENABLED=true, но вход закрыт до наличия и валидности всех Secrets; CART_ENABLED=false. В отдельных staging/production-конфигурациях все флаги false. При изменившейся схеме операция отклоняется, данные не выдумываются.
 
 ## API
 

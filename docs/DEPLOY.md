@@ -2,7 +2,7 @@
 
 У ChatGPT пока нет доступа к вашему аккаунту Cloudflare. Установленное GitHub-приложение Cloudflare разрешает самому Cloudflare читать репозиторий, но не выдаёт ChatGPT ключ управления Workers.
 
-Для уже созданного нового Worker **moe-pitanie-2** используются wrangler.jsonc в корне репозитория или worker/wrangler.jsonc. Оба указывают на серверный код, без раздачи HTML-сайта. Публичный каталог включён для проверки; OAuth и создание ссылки на корзину выключены. Старый moe-pitanie-api и GitHub Pages сохраняются.
+Для уже созданного нового Worker **moe-pitanie-2** используются wrangler.jsonc в корне репозитория или worker/wrangler.jsonc. Оба указывают на серверный код, без раздачи HTML-сайта. Публичный каталог включён для проверки; OAuth подготовлен, но доступен только после добавления всех Secrets. Создание ссылки на корзину выключено. Старый moe-pitanie-api и GitHub Pages сохраняются.
 
 Если новый Worker уже связан с GitHub, ручная вставка не требуется. Выбрать ветку feat/worker-mcp-foundation, Build command `npm test`, Deploy command `npx wrangler@4 deploy`. Эти команды работают и из корня, и из worker/. После push Cloudflare запускает сборку. Корневая package.json только перенаправляет тесты в worker/.
 

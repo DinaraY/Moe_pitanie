@@ -7,7 +7,7 @@
   "vars": {
     "ALLOWED_ORIGIN": "https://dinaray.github.io",
     "CATALOG_ENABLED": "true",
-    "OAUTH_ENABLED": "false",
+    "OAUTH_ENABLED": "true",
     "CART_ENABLED": "false",
     "VV_AUTHORIZATION_ENDPOINT": "https://oauth.vkusvill.ru/oauth2/auth",
     "VV_TOKEN_ENDPOINT": "https://oauth.vkusvill.ru/oauth2/token",
