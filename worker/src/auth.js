@@ -122,7 +122,7 @@ export async function oauth(request, env, transport = fetch) {
   if (env.VV_TOKEN_AUTH_METHOD === 'client_secret_basic') {
     headers.Authorization = 'Basic ' + btoa(`${encodeURIComponent(env.VV_CLIENT_ID)}:${encodeURIComponent(env.VV_CLIENT_SECRET)}`);
   } else { body.set('client_id', env.VV_CLIENT_ID); body.set('client_secret', env.VV_CLIENT_SECRET); }
-  const response = await transport(config.token, { method: 'POST', headers, body, redirect: 'error', signal: AbortSignal.timeout(15000) });
+  const response = await transport(config.token, { method: 'POST', headers, body, redirect: 'manual', signal: AbortSignal.timeout(15000) });
   if (!response.ok || !response.headers.get('Content-Type')?.includes('application/json')) throw new Error('OAUTH_EXCHANGE_FAILED');
   // Bound sensitive upstream data, including chunked responses.
   const reader = response.body.getReader(); let text = '', size = 0; const decoder = new TextDecoder();

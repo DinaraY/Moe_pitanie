@@ -25,7 +25,7 @@ test('PKCE, browser binding, one-use state, encrypted session and logout', async
   const tokenExchange = async (url, options) => {
     count++;
     assert.equal(url, env.VV_TOKEN_ENDPOINT);
-    assert.equal(options.redirect, 'error');
+    assert.equal(options.redirect, 'manual');
     assert.equal(options.body.get('code_verifier').length, 43);
     assert.ok(options.headers.Authorization.startsWith('Basic '));
     return Response.json({ access_token: 'test-access-token', token_type: 'Bearer', expires_in: 7200, refresh_token: 'must-not-store' });
