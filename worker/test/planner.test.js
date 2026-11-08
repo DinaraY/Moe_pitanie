@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { normalize, payload } from '../src/catalog.js';
-import { quote, totals } from '../../shared/food.js';
+import { quote, totals, totalBounds } from '../../shared/food.js';
 import { buildPlan } from '../src/planner.js';
 import { createDraft, confirmDraft } from '../src/cart.js';
 import { environment } from './helpers.js';
@@ -58,6 +58,27 @@ test('portion calories and purchased packages are separate; missing data is neve
   assert.equal(weighted.lines[0].quantity, 0.16);
   assert.equal(weighted.total, 16);
   assert.equal(weighted.estimated, true);
+});
+test('different manufacturers produce a range; identical values stay exact', () => {
+  const one = 'АО ТЕСТ А: белки 10 г, жиры 4 г, углеводы 11 г; 120 ккал';
+  const two = 'АО ТЕСТ Б: белки 8 г, жиры 5 г, углеводы 12 г; 125 ккал';
+  const product = normalize(item({ properties: [{ name: 'Пищевая ценность в 100 г', value: one + '<br>' + two }] }), false);
+  assert.equal(product.nutrition, null);
+  assert.deepEqual(product.nutritionRange.kcal, { min: 120, max: 125 });
+  assert.equal(product.nutritionVariants.length, 2);
+  assert.equal(product.nutritionVariants[0].manufacturer, 'АО ТЕСТ А');
+  const total = totalBounds([{ product, grams: 50 }, { product: normalize(item(), false), grams: 100 }]);
+  assert.deepEqual(total.kcal, { min: 180, max: 182.5 });
+  assert.deepEqual(total.protein, { min: 14, max: 15 });
+  const identical = normalize(item({ properties: [{ name: 'Ценность на 100 г', value: one + '<br>' + one.replace('ТЕСТ А', 'ТЕСТ Б') }] }), false);
+  assert.equal(identical.nutrition.kcal, 120);
+  assert.equal(identical.nutritionRange, null);
+});
+test('incomplete manufacturer data never becomes a partial range or a zero total', () => {
+  const product = normalize(item({ properties: [{ name: 'Ценность на 100 г', value: 'ТЕСТ А: белки 10 г, жиры 4 г, углеводы 11 г; 120 ккал<br>ТЕСТ Б: данных нет' }] }), false);
+  assert.equal(product.nutrition, null);
+  assert.equal(product.nutritionRange, null);
+  assert.equal(totalBounds([{ product, grams: 100 }]), null);
 });
 test('unavailable upstream leaves empty plan slots instead of fabricated meals', async () => {
   const plan = await buildPlan(async () => { throw new Error('blocked'); }, tools, false);

@@ -2,7 +2,7 @@
 // e49df83b43429c32cb5c9c6bbd6154757f72bb1a (src/api.js, src/product.js).
 // This implementation deliberately keeps missing/ambiguous values unknown.
 const number = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
-export const text = value => typeof value === 'string' ? value.slice(0, 8000).replace(/<[^>]{0,500}>/g, ' ').replace(/[\u0000-\u001f\u007f]/g, ' ').trim() : '';
+export const text = value => typeof value === 'string' ? value.slice(0, 8000).replace(/<[^>]{0,500}>/g, ' ').replace(/&(?:nbsp|quot|amp|laquo|raquo);/g, entity => ({ '&nbsp;': ' ', '&quot;': '"', '&amp;': '&', '&laquo;': '«', '&raquo;': '»' })[entity]).replace(/[\u0000-\u001f\u007f]/g, ' ').trim() : '';
 export function officialUrl(value) {
   try {
     const url = new URL(value);
@@ -20,10 +20,8 @@ export function payload(result) {
   if (!value || value.ok === false) throw new Error('CATALOG_QUERY_FAILED');
   return value.data ?? value;
 }
-function nutrition(properties) {
-  const candidates = properties.filter(p => /ценност/iu.test(p.name) && /100\s*(?:г(?:рамм[а-яё]*)?(?![а-яё])|g\b)/iu.test(p.name + ' ' + p.value));
-  if (candidates.length !== 1 || /<br\s*\/?\s*>/iu.test(candidates[0].value)) return null;
-  const source = text(candidates[0].value);
+function parseNutrition(part) {
+  const source = text(part);
   const read = expression => {
     const matches = [...source.matchAll(expression)];
     if (matches.length !== 1) return null;
@@ -37,6 +35,27 @@ function nutrition(properties) {
   };
   if (Object.values(values).some(v => v === null) || values.kcal > 1000 || values.protein > 100 || values.fat > 100 || values.carbs > 100) return null;
   return { ...values, basisGrams: 100, source };
+}
+function nutrition(properties) {
+  const unknown = { nutrition: null, nutritionRange: null, nutritionVariants: [] };
+  const candidates = properties.filter(p => /ценност/iu.test(p.name) && /100\s*(?:г(?:рамм[а-яё]*)?(?![а-яё])|g\b)/iu.test(text(p.name) + ' ' + text(p.value)));
+  if (candidates.length !== 1 || candidates[0].value.length > 16000) return unknown;
+  const parts = candidates[0].value.split(/<br\s*\/?\s*>/iu).map(p => p.trim()).filter(Boolean);
+  if (!parts.length || parts.length > 40) return unknown;
+  const variants = parts.map(part => {
+    const value = parseNutrition(part);
+    const colon = part.indexOf(':');
+    return value ? { manufacturer: colon > 0 && colon < 180 ? text(part.slice(0, colon)) : null, ...value } : null;
+  });
+  // A missing manufacturer's values make the whole range unknown; never silently omit it.
+  if (variants.some(v => !v)) return unknown;
+  const keys = ['kcal', 'protein', 'fat', 'carbs'];
+  const same = variants.every(v => keys.every(k => v[k] === variants[0][k]));
+  return {
+    nutrition: same ? Object.fromEntries([...keys.map(k => [k, variants[0][k]]), ['basisGrams', 100], ['source', variants[0].source]]) : null,
+    nutritionRange: same ? null : { ...Object.fromEntries(keys.map(k => [k, { min: Math.min(...variants.map(v => v[k])), max: Math.max(...variants.map(v => v[k])) }])), basisGrams: 100 },
+    nutritionVariants: variants
+  };
 }
 export function normalize(item, personalized, now = new Date().toISOString()) {
   const id = typeof item?.id === 'string' && /^\d+$/.test(item.id) ? Number(item.id) : item?.id;
@@ -52,7 +71,7 @@ export function normalize(item, personalized, now = new Date().toISOString()) {
     packageGrams: unit === 'шт' ? grams : null,
     availability: available === null ? 'unverified' : available > 0 ? 'available' : 'unavailable',
     availableQuantity: available,
-    nutrition: nutrition(properties),
+    ...nutrition(properties),
     categories: Array.isArray(item.category) ? item.category.map(c => text(c?.name)).filter(Boolean) : [],
     ingredients: text(properties.find(p => /состав/iu.test(p.name))?.value) || null,
     url: officialUrl(item.url), checkedAt: now, source: 'https://mcp.vkusvill.ru/mcp'
