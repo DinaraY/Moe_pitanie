@@ -1,5 +1,5 @@
-import { JOURNAL_KEY, localDate, emptyJournal, cleanJournal, makeEntry, remainingToday, preferences } from './shared/journal.js?v=20261109-today1';
-import { dailyTarget } from './shared/targets.js?v=20261109-today1';
+import { JOURNAL_KEY, localDate, emptyJournal, cleanJournal, makeEntry, remainingToday, preferences } from './shared/journal.js?v=20261109-smallpacks1';
+import { dailyTarget } from './shared/targets.js?v=20261109-smallpacks1';
 const node = (tag, text) => { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; return el; };
 const fmt = n => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 }).format(n);
 const boundsText = bounds => !bounds ? 'Не хватает данных КБЖУ: неизвестное не считается нулём.' : Object.entries({ kcal: 'ккал', protein: 'Б', fat: 'Ж', carbs: 'У' }).map(([key, label]) => `${label} ${bounds[key].min === bounds[key].max ? fmt(bounds[key].min) : `${fmt(bounds[key].min)}–${fmt(bounds[key].max)}`}${key === 'kcal' ? '' : ' г'}`).join(' · ');

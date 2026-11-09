@@ -56,3 +56,19 @@ test('unknown breakfast nutrition does not bypass the composed-lunch checks', as
   assert.ok(plan.days.every(d => d.assessment.status === 'unknown'));
   assert.ok(plan.days.every(d => d.meals.filter(m => ['Обед','Ужин'].includes(m.name)).every(m => mainMealCheck(m).status === 'suitable')));
 });
+
+test('bulk soup is rejected even for a small serving and a perfect rating', () => {
+  const bulk = { ...soup, id: 99, name: 'Борщ с курицей, 1 кг', packageGrams: 1000 };
+  assert.equal(preparedComponent(bulk, 'soup'), false);
+  const small = { ...bulk, id: 98, packageGrams: 300, name: 'Борщ с курицей, 300 г' };
+  assert.equal(preparedComponent(small, 'soup'), true);
+  const mixed = { ready: [], salad: [salad], soup: [bulk, small] };
+  const options = completeMeals(mixed);
+  assert.ok(options.length > 0);
+  assert.ok(options.every(o => o.items[0].product.id === 98));
+  assert.equal(replacementPortion(options[0], options[0].items[0], bulk), null);
+  assert.equal(mainMealCheck({ items: [{ group: 'soup', product: bulk, grams: 250 }, { group: 'salad', product: salad, grams: 150 }] }).status, 'unsuitable');
+  assert.deepEqual(completeMeals({ ...mixed, soup: [bulk] }), []);
+  assert.equal(preparedComponent({ ...salad, packageGrams: 1000 }, 'salad'), false);
+  assert.equal(preparedComponent({ ...main, packageGrams: 1000 }, 'ready'), false);
+});

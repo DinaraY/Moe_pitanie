@@ -1,6 +1,6 @@
-import { dailyTarget } from './shared/targets.js?v=20261109-today1';
-import { MEALS } from './shared/today.js?v=20261109-today1';
-import { reviewText } from './shared/reviews.js?v=20261109-today1';
+import { dailyTarget } from './shared/targets.js?v=20261109-smallpacks1';
+import { MEALS } from './shared/today.js?v=20261109-smallpacks1';
+import { reviewText } from './shared/reviews.js?v=20261109-smallpacks1';
 const el = (tag, text) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; return node; };
 const money = n => new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 const fmt = n => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 }).format(n);

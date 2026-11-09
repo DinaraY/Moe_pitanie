@@ -1,4 +1,4 @@
-import { mainMealCheck, componentPortions } from './meals.js';
+import { mainMealCheck, componentPortions } from './meals.js?v=20261109-smallpacks1';
 import { reviewPenalty } from './reviews.js';
 import { totalBounds, nutrientBounds } from './food.js';
 
