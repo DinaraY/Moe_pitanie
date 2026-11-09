@@ -1,6 +1,7 @@
-import { createJournal } from './journal-ui.js?v=20261109-diary1';
-import { dailyTarget, balanceDay, assessment } from './shared/targets.js?v=20261109-diary1';
-import { nutrients, totals, nutrientBounds, totalBounds, quote } from './shared/food.js?v=20261109-diary1';
+import { reviewText } from './shared/reviews.js?v=20261109-reviews1';
+import { createJournal } from './journal-ui.js?v=20261109-reviews1';
+import { dailyTarget, balanceDay, assessment } from './shared/targets.js?v=20261109-reviews1';
+import { nutrients, totals, nutrientBounds, totalBounds, quote } from './shared/food.js?v=20261109-reviews1';
 const servers = Object.freeze({
   testing: 'https://moe-pitanie-2.statusdi.workers.dev',
   production: 'https://moe-pitanie-api.statusdi.workers.dev',
@@ -188,6 +189,7 @@ function renderPlan() {
         if (item.product) {
           const p = item.product;
           box.append(element('p', `${money(p.price)} / ${p.unit || 'единица неизвестна'} · ${p.unit === 'кг' ? 'весовой товар' : p.packageGrams ? `${format(p.packageGrams)} г в упаковке` : 'масса упаковки неизвестна'}`));
+          box.append(element('p', reviewText(p), 'muted'));
           box.append(element('p', `На 100 г: ${nutritionText(p)}`, 'muted'));
           if (p.nutritionRange) {
             const variants = element('details'); variants.append(element('summary', 'КБЖУ разных производителей'));
@@ -240,6 +242,7 @@ function renderPlan() {
             results.replaceChildren();
             for (const product of response.products) {
               const candidate = element('div'); candidate.append(element('p', `${product.name} · ${money(product.price)} / ${product.unit || '?'}`));
+              candidate.append(element('p', reviewText(product), 'muted'));
               candidate.append(element('p', `На 100 г: ${nutritionText(product)}`, 'muted'));
               const choose = element('button', journal.isBlocked(product.id) ? 'Вы исключили этот товар' : product.availability === 'unavailable' ? 'Нет в наличии' : 'Выбрать'); choose.disabled = product.availability === 'unavailable' || journal.isBlocked(product.id);
               choose.addEventListener('click', () => {

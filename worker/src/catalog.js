@@ -1,3 +1,4 @@
+import { normalizeReviews } from '../../shared/reviews.js';
 // Field names verified against the official vkustech/vkusvill-cli, commit
 // e49df83b43429c32cb5c9c6bbd6154757f72bb1a (src/api.js, src/product.js).
 // This implementation deliberately keeps missing/ambiguous values unknown.
@@ -72,6 +73,7 @@ export function normalize(item, personalized, now = new Date().toISOString()) {
     availability: available === null ? 'unverified' : available > 0 ? 'available' : 'unavailable',
     availableQuantity: available,
     ...nutrition(properties),
+    reviews: normalizeReviews(item.rating),
     categories: Array.isArray(item.category) ? item.category.map(c => text(c?.name)).filter(Boolean) : [],
     ingredients: text(properties.find(p => /состав/iu.test(p.name))?.value) || null,
     url: officialUrl(item.url), checkedAt: now, source: 'https://mcp.vkusvill.ru/mcp'
@@ -94,8 +96,9 @@ export function requireTool(tools, name, requiredProperty, type) {
   return tool;
 }
 export async function search(rpc, tools, query, authenticated) {
-  requireTool(tools, 'vkusvill_products_search', 'q', 'string');
-  const result = payload(await rpc('tools/call', { name: 'vkusvill_products_search', arguments: { q: query, page: 1, limit: 10, mode: 'full' } }));
+  const tool = requireTool(tools, 'vkusvill_products_search', 'q', 'string');
+  const sort = tool.inputSchema.properties.sort?.enum?.includes('rating') ? { sort: 'rating' } : {};
+  const result = payload(await rpc('tools/call', { name: 'vkusvill_products_search', arguments: { q: query, page: 1, limit: 10, mode: 'full', ...sort } }));
   if (!Array.isArray(result.items)) throw new Error('CATALOG_SCHEMA_CHANGED');
   const personal = authenticated && result.meta?.personalized !== false;
   return result.items.slice(0, 10).map(item => normalize(item, personal));
