@@ -1,4 +1,6 @@
-import { nutrients, totals, nutrientBounds, totalBounds, quote } from './shared/food.js?v=20261109-cart-login2';
+import { createJournal } from './journal-ui.js?v=20261109-diary1';
+import { dailyTarget, balanceDay, assessment } from './shared/targets.js?v=20261109-diary1';
+import { nutrients, totals, nutrientBounds, totalBounds, quote } from './shared/food.js?v=20261109-diary1';
 const servers = Object.freeze({
   testing: 'https://moe-pitanie-2.statusdi.workers.dev',
   production: 'https://moe-pitanie-api.statusdi.workers.dev',
@@ -22,6 +24,9 @@ remember.addEventListener('change', () => {
 });
 let capabilities = {}, plan = null, draft = null, planRevision = 0;
 let draftTimer;
+const journal = createJournal(document.getElementById('journal'), () => {
+  if (plan) { invalidateDraft(); renderPlan(); }
+});
 const planner = document.getElementById('planner');
 const basket = document.getElementById('basket');
 const build = document.getElementById('build');
@@ -169,6 +174,8 @@ function summaryView(summary) {
 }
 function renderPlan() {
   const days = document.getElementById('days'); days.replaceChildren();
+  const target = plan.target || dailyTarget();
+  days.append(element('p', `Дневной ориентир: ${macroText(target)}. Поддержание веса ≈ ${format(target.maintenance)} ккал; расчётный дефицит ${target.deficit} ккал. Формула Миффлина — Сан Жеора, активность 1,3; белок 1,4 г/кг, жиры 0,8 г/кг, углеводы — остаток. Это оценка; фактическая потребность уточняется по динамике веса.`));
   for (const day of plan.days) {
     const section = element('section'); section.append(element('h3', `День ${day.day}`));
     const dayEntries = [];
@@ -203,15 +210,20 @@ function renderPlan() {
           if (p.url) { const link = element('a', 'Карточка товара'); link.href = p.url; link.target = '_blank'; link.rel = 'noopener noreferrer'; box.append(element('br'), link); }
           box.append(element('p', `Проверено: ${new Date(p.checkedAt).toLocaleString('ru-RU')}`, 'muted'));
         } else complete = false;
-        const pool = plan.groups[item.group] || [];
-        const replace = element('button', 'Заменить'); replace.className = 'secondary'; replace.disabled = pool.length < 2;
+        const pool = (plan.groups[item.group] || []).filter(p => !journal.isBlocked(p.id));
+        const replace = element('button', 'Заменить'); replace.className = 'secondary'; replace.disabled = !pool.some(p => p.id !== item.product?.id);
         replace.addEventListener('click', () => {
           const index = pool.findIndex(p => p.id === item.product?.id);
           item.product = pool[(index + 1) % pool.length];
           if (item.group === 'ready' || item.group === 'yogurt') item.grams = item.product.packageGrams;
+          balanceDay(day, plan.groups, target, item, journal.preferences());
           invalidateDraft(); renderPlan();
         });
         box.append(replace);
+        if (item.product) {
+          box.append(journal.controls(item.product, item.grams));
+          if (journal.isBlocked(item.product.id)) box.append(element('p', 'Вы исключили этот товар. Он остался в текущем меню; замените его или повторите подбор.', 'muted'));
+        }
         const alternative = element('details'); alternative.append(element('summary', 'Найти другую позицию'));
         const query = element('input'); query.type = 'search'; query.maxLength = 120; query.placeholder = item.label;
         query.setAttribute('aria-label', `Поиск замены: ${item.label}, день ${day.day}, ${meal.name}`);
@@ -229,11 +241,12 @@ function renderPlan() {
             for (const product of response.products) {
               const candidate = element('div'); candidate.append(element('p', `${product.name} · ${money(product.price)} / ${product.unit || '?'}`));
               candidate.append(element('p', `На 100 г: ${nutritionText(product)}`, 'muted'));
-              const choose = element('button', product.availability === 'unavailable' ? 'Нет в наличии' : 'Выбрать'); choose.disabled = product.availability === 'unavailable';
+              const choose = element('button', journal.isBlocked(product.id) ? 'Вы исключили этот товар' : product.availability === 'unavailable' ? 'Нет в наличии' : 'Выбрать'); choose.disabled = product.availability === 'unavailable' || journal.isBlocked(product.id);
               choose.addEventListener('click', () => {
                 item.product = product;
                 if (item.group === 'ready' || item.group === 'yogurt') item.grams = product.packageGrams;
                 else if (!item.grams) item.grams = 100;
+                balanceDay(day, plan.groups, target, item, journal.preferences());
                 invalidateDraft(); renderPlan();
               });
               candidate.append(choose); results.append(candidate);
@@ -248,6 +261,8 @@ function renderPlan() {
     const exact = complete ? totals(dayEntries) : null;
     const bounds = complete && !exact ? totalBounds(dayEntries) : null;
     section.append(element('p', `Итого за день: ${exact ? macroText(exact) : bounds ? rangeText(bounds) : macroText(null)}`));
+    const result = assessment(day, target);
+    section.append(element('p', result.status === 'within' ? 'Все показатели в пределах ±10% от ориентира.' : result.status === 'unknown' ? 'Проверить соответствие цели нельзя: не хватает данных КБЖУ или порций.' : 'Есть отклонения от дневной цели. Доступные товары и целые упаковки не позволили попасть во все ориентиры; проверьте итог.', 'muted'));
     days.append(section);
   }
   const selected = entries(); const preview = document.getElementById('shopping-preview');
@@ -260,11 +275,11 @@ build.addEventListener('click', async () => {
   build.disabled = true; clearPlan(); const revision = planRevision;
   planStatus.textContent = 'Ищем товары для девяти групп. Это может занять до минуты…';
   try {
-    const result = await api('/api/plan', { method: 'POST', body: '{}' });
+    const result = await api('/api/plan', { method: 'POST', body: JSON.stringify({ preferences: journal.preferences() }) });
     if (revision !== planRevision) return;
     plan = result; renderPlan();
     const missing = allItems().filter(item => !item.product).length;
-    planStatus.textContent = missing ? `Не удалось заполнить ${missing} позиций. Отсутствующие данные не подставлены.` : 'Товары подобраны. Проверьте порции, КБЖУ и замены.';
+    planStatus.textContent = missing ? `Не удалось заполнить ${missing} позиций. Отсутствующие данные не подставлены.` : 'Товары подобраны. Учтены оценки и история за 7 дней; при небольшом ассортименте повторы возможны. Это меню на полные дни; уже съеденное смотрите в дневнике.';
   } catch { if (revision === planRevision) planStatus.textContent = 'Каталог недоступен или его формат изменился. Попробуйте позже; примерное меню на главной продолжает работать.'; }
   finally { build.disabled = false; }
 });
