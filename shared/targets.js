@@ -1,3 +1,4 @@
+import { reviewPenalty } from './reviews.js';
 import { totalBounds, nutrientBounds } from './food.js';
 
 // Mifflin–St Jeor, female profile supplied by the user. Targets are estimates.
@@ -30,7 +31,7 @@ const portions = {
 // A locked replacement keeps the user's choice while other portions adapt.
 export function balanceDay(day, groups, target = dailyTarget(), locked = null, preferences = {}) {
   const items = day.meals.flatMap(m => m.items);
-  const preferencePenalty = product => (preferences.recent?.includes(product.id) ? 0.04 : 0) - (preferences.liked?.includes(product.id) ? 0.01 : 0);
+  const preferencePenalty = product => (preferences.recent?.includes(product.id) ? 0.04 : 0) - (preferences.liked?.includes(product.id) ? 0.01 : 0) + reviewPenalty(product);
   if (!Number.isFinite(score(day, target))) return assessment(day, target);
   for (let pass = 0; pass < 4; pass++) {
     let changed = false;

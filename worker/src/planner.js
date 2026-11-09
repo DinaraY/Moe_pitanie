@@ -1,3 +1,4 @@
+import { reviewPenalty } from '../../shared/reviews.js';
 import { search } from './catalog.js';
 import { validatePreferences } from '../../shared/journal.js';
 import { dailyTarget, balanceDay } from '../../shared/targets.js';
@@ -39,10 +40,10 @@ export async function buildPlan(rpc, tools, authenticated, inputPreferences = {}
       groups[group.key] = (await search(rpc, tools, group.query, authenticated))
         .filter(p => suitable(p, group.key) && !preference.blocked.includes(p.id));
       const preferenceScore = p => (preference.recent.includes(p.id) ? 2 : 0) - (preference.liked.includes(p.id) ? 1 : 0);
-      groups[group.key].sort((a, b) => preferenceScore(a) - preferenceScore(b));
+      groups[group.key].sort((a, b) => preferenceScore(a) - preferenceScore(b) || reviewPenalty(a) - reviewPenalty(b));
       if (group.key === 'ready') {
         // A ranking preference, not a claim that the full day meets a calorie target.
-        const score = p => p.nutrition && p.packageGrams ? Math.abs(p.nutrition.kcal * p.packageGrams / 100 - 450) : Infinity;
+        const score = p => p.nutrition && p.packageGrams ? Math.abs(p.nutrition.kcal * p.packageGrams / 100 - 450) / 450 + reviewPenalty(p) : Infinity;
         groups.ready.sort((a, b) => preferenceScore(a) - preferenceScore(b) || score(a) - score(b));
       }
     } catch { groups[group.key] = []; problems.push(group.label); }

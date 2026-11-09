@@ -206,3 +206,46 @@ test('equivalent meals prefer a fresh product over recently eaten food', async (
   balanceDay(day, { yogurt: [recent, fresh] }, { kcal: 400, protein: 20, fat: 16, carbs: 44 }, null, { recent: [1] });
   assert.equal(selected.product.id, 2);
 });
+
+test('official store ratings preserve validated values, counts and unknowns', () => {
+  assert.deepEqual(normalize(item({ rating: { average: 4.87, count: 5530 } }), false).reviews, { average: 4.87, count: 5530 });
+  assert.deepEqual(normalize(item(), false).reviews, { average: null, count: null });
+  assert.deepEqual(normalize(item({ rating: { average: 5, count: 0 } }), false).reviews, { average: null, count: 0 });
+  assert.deepEqual(normalize(item({ rating: { average: 6, count: -2 } }), false).reviews, { average: null, count: null });
+  assert.deepEqual(normalize(item({ rating: { average: '4.9', count: '100' } }), false).reviews, { average: null, count: null });
+});
+test('review confidence discounts tiny samples; equivalent meals prefer well-rated food', async () => {
+  const { reviewPenalty, reviewText } = await import('../../shared/reviews.js');
+  const { balanceDay } = await import('../../shared/targets.js');
+  const base = { packageGrams: 200, availability: 'available', nutrition: { kcal: 200, protein: 10, fat: 8, carbs: 22 } };
+  const popular = { ...base, id: 1, reviews: { average: 4.9, count: 1000 } };
+  const tiny = { ...base, id: 2, reviews: { average: 5, count: 1 } };
+  assert.ok(reviewPenalty(popular) < reviewPenalty(tiny));
+  assert.equal(reviewPenalty(base), 0);
+  assert.equal(reviewPenalty({ reviews: { average: 5, count: 0 } }), 0);
+  assert.match(reviewText(popular), /4,9 из 5/);
+  assert.match(reviewText(base), /рейтинг не передан/);
+  const selected = { group: 'yogurt', product: tiny, grams: 200 };
+  const day = { meals: [{ items: [selected] }] };
+  const target = { kcal: 400, protein: 20, fat: 16, carbs: 44 };
+  balanceDay(day, { yogurt: [tiny, popular] }, target);
+  assert.equal(selected.product.id, 1);
+  selected.product = tiny;
+  balanceDay(day, { yogurt: [tiny, popular] }, target, null, { blocked: [1] });
+  assert.equal(selected.product.id, 2);
+  const calorieMismatch = { ...popular, nutrition: { ...popular.nutrition, kcal: 600 } };
+  balanceDay(day, { yogurt: [tiny, calorieMismatch] }, target);
+  assert.equal(selected.product.id, 2);
+});
+test('search requests store rating sort only when the live tool schema supports it', async () => {
+  const { search } = await import('../src/catalog.js');
+  const schema = structuredClone(tools);
+  schema[0].inputSchema.properties.sort = { type: 'string', enum: ['popularity', 'rating'] };
+  let args;
+  const rpc = async (method, params) => { args = params.arguments; return envelope({ items: [item({ rating: { average: 4.9, count: 50 } })] }); };
+  const products = await search(rpc, schema, 'тест', false);
+  assert.equal(args.sort, 'rating');
+  assert.equal(products[0].reviews.count, 50);
+  await search(rpc, tools, 'тест', false);
+  assert.equal(args.sort, undefined);
+});
