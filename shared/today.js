@@ -1,4 +1,4 @@
-import { completeMeals } from './meals.js';
+import { completeMeals } from './meals.js?v=20261109-smallpacks1';
 import { dailyTarget } from './targets.js';
 import { nutrientBounds } from './food.js';
 import { validatePreferences } from './journal.js';

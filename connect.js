@@ -1,10 +1,10 @@
-import { mainMealCheck, replacementPortion } from './shared/meals.js?v=20261109-today1';
-import { mountToday } from './today-ui.js?v=20261109-today1';
-import { localDate } from './shared/journal.js?v=20261109-today1';
-import { reviewText } from './shared/reviews.js?v=20261109-today1';
-import { createJournal } from './journal-ui.js?v=20261109-today1';
-import { dailyTarget, balanceDay, assessment } from './shared/targets.js?v=20261109-today1';
-import { nutrients, totals, nutrientBounds, totalBounds, quote } from './shared/food.js?v=20261109-today1';
+import { mainMealCheck, replacementPortion } from './shared/meals.js?v=20261109-smallpacks1';
+import { mountToday } from './today-ui.js?v=20261109-smallpacks1';
+import { localDate } from './shared/journal.js?v=20261109-smallpacks1';
+import { reviewText } from './shared/reviews.js?v=20261109-smallpacks1';
+import { createJournal } from './journal-ui.js?v=20261109-smallpacks1';
+import { dailyTarget, balanceDay, assessment } from './shared/targets.js?v=20261109-smallpacks1';
+import { nutrients, totals, nutrientBounds, totalBounds, quote } from './shared/food.js?v=20261109-smallpacks1';
 const servers = Object.freeze({
   testing: 'https://moe-pitanie-2.statusdi.workers.dev',
   production: 'https://moe-pitanie-api.statusdi.workers.dev',

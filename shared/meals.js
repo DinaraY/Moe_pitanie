@@ -2,8 +2,9 @@ import { nutrientBounds, totalBounds } from './food.js';
 import { reviewPenalty } from './reviews.js';
 // Practical defaults for this profile, not a universal definition of a healthy meal.
 export const MEAL_LIMITS = Object.freeze({ minKcal: 350, maxKcal: 600, minProtein: 20, maxFat: 25 });
+export const MAX_PACK_GRAMS = Object.freeze({ ready: 450, soup: 450, salad: 300 });
 export function preparedComponent(product, group) {
-  if (!product || product.availability === 'unavailable' || !Number.isFinite(product.packageGrams) || product.packageGrams <= 0 || product.packageGrams > 1000) return false;
+  if (!product || product.availability === 'unavailable' || !Number.isFinite(product.packageGrams) || product.packageGrams <= 0 || product.packageGrams > (MAX_PACK_GRAMS[group] || 0)) return false;
   const categories = (product.categories || []).join(' '), name = product.name || '';
   if (!/готов|кулинар|вторые блюда|первые блюда|салаты/iu.test(categories)) return false;
   if (/заморож|полуфабрикат/iu.test(categories + ' ' + name) || /(?:^|[\s,(])зам\.|сыр(?:ой|ые|ая)(?:\s|$)|для жарки|для запекания|сухая смесь/iu.test(name)) return false;
