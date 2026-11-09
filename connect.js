@@ -1,4 +1,5 @@
-import { nutrients, totals, nutrientBounds, totalBounds, quote } from './shared/food.js?v=20261109-cart-login2';
+import { dailyTarget, balanceDay, assessment } from './shared/targets.js?v=20261109-targets1';
+import { nutrients, totals, nutrientBounds, totalBounds, quote } from './shared/food.js?v=20261109-targets1';
 const servers = Object.freeze({
   testing: 'https://moe-pitanie-2.statusdi.workers.dev',
   production: 'https://moe-pitanie-api.statusdi.workers.dev',
@@ -169,6 +170,8 @@ function summaryView(summary) {
 }
 function renderPlan() {
   const days = document.getElementById('days'); days.replaceChildren();
+  const target = plan.target || dailyTarget();
+  days.append(element('p', `Дневной ориентир: ${macroText(target)}. Поддержание веса ≈ ${format(target.maintenance)} ккал; расчётный дефицит ${target.deficit} ккал. Формула Миффлина — Сан Жеора, активность 1,3; белок 1,4 г/кг, жиры 0,8 г/кг, углеводы — остаток. Это оценка; фактическая потребность уточняется по динамике веса.`));
   for (const day of plan.days) {
     const section = element('section'); section.append(element('h3', `День ${day.day}`));
     const dayEntries = [];
@@ -209,6 +212,7 @@ function renderPlan() {
           const index = pool.findIndex(p => p.id === item.product?.id);
           item.product = pool[(index + 1) % pool.length];
           if (item.group === 'ready' || item.group === 'yogurt') item.grams = item.product.packageGrams;
+          balanceDay(day, plan.groups, target, item);
           invalidateDraft(); renderPlan();
         });
         box.append(replace);
@@ -234,6 +238,7 @@ function renderPlan() {
                 item.product = product;
                 if (item.group === 'ready' || item.group === 'yogurt') item.grams = product.packageGrams;
                 else if (!item.grams) item.grams = 100;
+                balanceDay(day, plan.groups, target, item);
                 invalidateDraft(); renderPlan();
               });
               candidate.append(choose); results.append(candidate);
@@ -248,6 +253,8 @@ function renderPlan() {
     const exact = complete ? totals(dayEntries) : null;
     const bounds = complete && !exact ? totalBounds(dayEntries) : null;
     section.append(element('p', `Итого за день: ${exact ? macroText(exact) : bounds ? rangeText(bounds) : macroText(null)}`));
+    const result = assessment(day, target);
+    section.append(element('p', result.status === 'within' ? 'Все показатели в пределах ±10% от ориентира.' : result.status === 'unknown' ? 'Проверить соответствие цели нельзя: не хватает данных КБЖУ или порций.' : 'Есть отклонения от дневной цели. Доступные товары и целые упаковки не позволили попасть во все ориентиры; проверьте итог.', 'muted'));
     days.append(section);
   }
   const selected = entries(); const preview = document.getElementById('shopping-preview');

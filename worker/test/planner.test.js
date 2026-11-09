@@ -158,3 +158,33 @@ test('an old page with rounded weights cannot confirm a new cart draft', async (
   assert.equal(result.error, 'CLIENT_UPDATE_REQUIRED');
   assert.equal(store.count(), 0);
 });
+
+test('personal targets use the supplied profile and consistent macro energy', async () => {
+  const { dailyTarget } = await import('../../shared/targets.js');
+  const target = dailyTarget();
+  assert.equal(target.kcal, 1500);
+  assert.equal(target.protein, 101);
+  assert.equal(target.fat, 58);
+  assert.equal(target.carbs, 144);
+  assert.ok(Math.abs(target.protein * 4 + target.fat * 9 + target.carbs * 4 - target.kcal) < 5);
+});
+test('balancing improves daily fit, preserves full ready packages and a chosen replacement', async () => {
+  const { balanceDay, assessment } = await import('../../shared/targets.js');
+  const product = (id, grams, kcal) => ({ id, packageGrams: grams, availability: 'available', nutrition: { kcal, protein: 10, fat: 5, carbs: 15 } });
+  const small = product(1, 100, 100), large = product(2, 300, 100);
+  const target = { kcal: 600, protein: 60, fat: 30, carbs: 90 };
+  const first = { group: 'ready', product: small, grams: 100 };
+  const second = { group: 'ready', product: small, grams: 100 };
+  const day = { meals: [{ items: [first, second] }] };
+  balanceDay(day, { ready: [small, large] }, target);
+  assert.equal(assessment(day, target).status, 'within');
+  assert.equal(first.grams, first.product.packageGrams);
+  first.product = small; first.grams = 100;
+  balanceDay(day, { ready: [small, large] }, target, first);
+  assert.equal(first.product.id, 1);
+  assert.equal(first.grams, 100);
+  first.product = { ...small, nutrition: null };
+  assert.equal(assessment(day, target).status, 'unknown');
+  first.product = { ...small, nutrition: null, nutritionRange: Object.fromEntries(Object.keys(target).map(k => [k, { min: 0, max: target[k] * 3 }])) };
+  assert.equal(assessment(day, target).status, 'outside');
+});

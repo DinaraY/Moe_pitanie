@@ -1,4 +1,5 @@
 import { search } from './catalog.js';
+import { dailyTarget, balanceDay } from '../../shared/targets.js';
 export const GROUPS = Object.freeze([
   { key: 'eggs', query: 'яйца', label: 'Яйца', grams: 110 },
   { key: 'avocado', query: 'авокадо', label: 'Авокадо', grams: 70 },
@@ -42,6 +43,7 @@ export async function buildPlan(rpc, tools, authenticated) {
       }
     } catch { groups[group.key] = []; problems.push(group.label); }
   }
+  const target = dailyTarget();
   const days = [];
   for (let day = 0; day < 2; day++) {
     const meals = [];
@@ -55,7 +57,9 @@ export async function buildPlan(rpc, tools, authenticated) {
       });
       meals.push({ name, items });
     }
-    days.push({ day: day + 1, meals });
+    const result = { day: day + 1, meals };
+    result.assessment = balanceDay(result, groups, target);
+    days.push(result);
   }
-  return { days, groups, problems, portionsAreSuggestions: true, deliveryAvailability: authenticated ? 'see_products' : 'unverified', checkedAt: new Date().toISOString() };
+  return { target, days, groups, problems, portionsAreSuggestions: true, deliveryAvailability: authenticated ? 'see_products' : 'unverified', checkedAt: new Date().toISOString() };
 }
