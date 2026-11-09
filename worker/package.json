@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node test/worker.test.js && node test/auth.test.js && node test/planner.test.js && node test/journal.test.js && node test/today.test.js",
+    "test": "node test/worker.test.js && node test/auth.test.js && node test/planner.test.js && node test/journal.test.js && node test/today.test.js && node test/meals.test.js",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy"
   }

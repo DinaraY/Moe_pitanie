@@ -1,3 +1,4 @@
+import { mainMealCheck, componentPortions } from './meals.js';
 import { reviewPenalty } from './reviews.js';
 import { totalBounds, nutrientBounds } from './food.js';
 
@@ -39,13 +40,16 @@ export function balanceDay(day, groups, target = dailyTarget(), locked = null, p
       if (item === locked) continue;
       const original = { product: item.product, grams: item.grams };
       let best = original, bestScore = score(day, target) + preferencePenalty(item.product);
+      const meal = day.meals.find(m => m.items.includes(item));
+      const isMain = ['Обед', 'Ужин'].includes(meal?.name);
       const pool = groups[item.group] || [];
       for (const product of pool) {
         if (product.availability === 'unavailable' || preferences.blocked?.includes(product.id)) continue;
-        const weights = portions[item.group] || [product.packageGrams];
+        const weights = isMain && ['ready', 'salad', 'soup'].includes(item.group) ? componentPortions(product, item.group) : portions[item.group] || [product.packageGrams];
         for (const grams of weights) {
           if (!nutrientBounds(product, grams)) continue;
           item.product = product; item.grams = grams;
+          if (isMain && mainMealCheck(meal).status !== 'suitable') continue;
           let candidate = score(day, target) + preferencePenalty(product);
           if (item.group === 'ready' && items.some(other => other !== item && other.group === 'ready' && other.product?.id === product.id)) candidate += 0.02;
           if (candidate < bestScore - 0.000001) { bestScore = candidate; best = { product, grams }; }

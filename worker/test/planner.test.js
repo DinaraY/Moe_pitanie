@@ -86,17 +86,17 @@ test('incomplete manufacturer data never becomes a partial range or a zero total
 test('unavailable upstream leaves empty plan slots instead of fabricated meals', async () => {
   const plan = await buildPlan(async () => { throw new Error('blocked'); }, tools, false);
   assert.equal(plan.days.length, 2);
-  assert.equal(plan.problems.length, 9);
+  assert.equal(plan.problems.length, 11);
   assert.ok(plan.days.every(d => d.meals.length === 4 && d.meals.every(m => m.items.every(i => i.product === null))));
 });
 test('plan contains two complete days only from products actually returned', async () => {
-  const queries = ['яйца', 'авокадо', 'помидоры', 'готовые блюда', 'йогурт', 'творог', 'яблоки', 'пастила', 'шоколад'];
+  const queries = ['яйца', 'авокадо', 'помидоры', 'готовые блюда', 'салат', 'суп', 'йогурт', 'творог', 'яблоки', 'пастила', 'шоколад'];
   let calls = 0;
   const plan = await buildPlan(async (method, params) => {
     calls++; const q = params.arguments.q;
     return envelope({ items: [item({ id: queries.indexOf(q) + 1, name: q === 'яйца' ? 'Яйца тестовые' : q })], meta: { personalized: true } });
   }, tools, true);
-  assert.equal(calls, 9);
+  assert.equal(calls, 11);
   assert.ok(plan.days.every(day => day.meals.length === 4 && day.meals.every(meal => meal.items.every(i => i.product && i.grams > 0))));
   assert.ok(Object.values(plan.groups).every(pool => pool.length === 1));
 });

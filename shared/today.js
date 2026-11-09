@@ -1,3 +1,4 @@
+import { completeMeals } from './meals.js';
 import { dailyTarget } from './targets.js';
 import { nutrientBounds } from './food.js';
 import { validatePreferences } from './journal.js';
@@ -31,6 +32,7 @@ function preferenceCost(items, preferences) {
 }
 export function todayOptions(groups, context) {
   const options = {};
+  const mains = context.slots.some(k => k === 'lunch' || k === 'dinner') ? completeMeals(groups, context.preferences) : [];
   const pool = key => (groups[key] || []).filter(p => p.availability !== 'unavailable' && !context.preferences.blocked.includes(p.id));
   const item = (group, product, grams) => ({ group, label: group, product, grams });
   for (const key of context.slots) {
@@ -38,7 +40,7 @@ export function todayOptions(groups, context) {
     if (key === 'breakfast') {
       for (const egg of pool('eggs')) for (const avocado of pool('avocado')) for (const veg of pool('vegetables')) combinations.push([item('eggs', egg, 110), item('avocado', avocado, 55), item('vegetables', veg, 150)]);
     } else if (key === 'lunch' || key === 'dinner') {
-      combinations = pool('ready').map(p => [item('ready', p, p.packageGrams)]);
+      combinations = mains.map(option => option.items);
     } else {
       for (const group of ['yogurt', 'curd', 'fruit', 'pastila', 'sweet']) {
         for (const p of pool(group)) {
@@ -72,7 +74,7 @@ export function suggestToday(groups, input) {
       const ids = state.chosen.flatMap(o => o.items.map(i => i.product.id));
       for (const option of options[key]) {
         const bounds = add(state.bounds, option.bounds);
-        const repeat = option.items.some(i => ids.includes(i.product.id)) ? 0.02 : 0;
+        const repeat = option.items.reduce((sum, i) => sum + (ids.includes(i.product.id) ? ['ready', 'soup'].includes(i.group) ? 0.04 : 0.005 : 0), 0);
         const cost = state.cost + option.preferenceCost + repeat;
         next.push({ chosen: [...state.chosen, option], bounds, cost, rank: dayScore(bounds, target) + cost });
       }

@@ -1,3 +1,4 @@
+import { mainMealCheck, replacementPortion } from './shared/meals.js?v=20261109-today1';
 import { mountToday } from './today-ui.js?v=20261109-today1';
 import { localDate } from './shared/journal.js?v=20261109-today1';
 import { reviewText } from './shared/reviews.js?v=20261109-today1';
@@ -217,12 +218,14 @@ function renderPlan({ preserveBasket = false } = {}) {
           if (p.url) { const link = element('a', 'Карточка товара'); link.href = p.url; link.target = '_blank'; link.rel = 'noopener noreferrer'; box.append(element('br'), link); }
           box.append(element('p', `Проверено: ${new Date(p.checkedAt).toLocaleString('ru-RU')}`, 'muted'));
         } else complete = false;
-        const pool = (plan.groups[item.group] || []).filter(p => !journal.isBlocked(p.id));
+        const main = ['Обед', 'Ужин'].includes(meal.name);
+        const pool = (plan.groups[item.group] || []).filter(p => !journal.isBlocked(p.id) && (!main || replacementPortion(meal, item, p) !== null));
         const replace = element('button', 'Заменить'); replace.className = 'secondary'; replace.disabled = !pool.some(p => p.id !== item.product?.id);
         replace.addEventListener('click', () => {
           const index = pool.findIndex(p => p.id === item.product?.id);
-          item.product = pool[(index + 1) % pool.length];
-          if (item.group === 'ready' || item.group === 'yogurt') item.grams = item.product.packageGrams;
+          const product = pool[(index + 1) % pool.length];
+          const grams = main ? replacementPortion(meal, item, product) : item.group === 'yogurt' ? product.packageGrams : item.grams;
+          item.product = product; item.grams = grams;
           balanceDay(day, plan.groups, target, item, journal.preferences());
           invalidateDraft(); renderPlan();
         });
@@ -249,11 +252,12 @@ function renderPlan({ preserveBasket = false } = {}) {
               const candidate = element('div'); candidate.append(element('p', `${product.name} · ${money(product.price)} / ${product.unit || '?'}`));
               candidate.append(element('p', reviewText(product), 'muted'));
               candidate.append(element('p', `На 100 г: ${nutritionText(product)}`, 'muted'));
-              const choose = element('button', journal.isBlocked(product.id) ? 'Вы исключили этот товар' : product.availability === 'unavailable' ? 'Нет в наличии' : 'Выбрать'); choose.disabled = product.availability === 'unavailable' || journal.isBlocked(product.id);
+              const fitsMeal = !main || replacementPortion(meal, item, product) !== null;
+              const choose = element('button', !fitsMeal ? 'Не подходит для этого сочетания' : journal.isBlocked(product.id) ? 'Вы исключили этот товар' : product.availability === 'unavailable' ? 'Нет в наличии' : 'Выбрать'); choose.disabled = !fitsMeal || product.availability === 'unavailable' || journal.isBlocked(product.id);
               choose.addEventListener('click', () => {
-                item.product = product;
-                if (item.group === 'ready' || item.group === 'yogurt') item.grams = product.packageGrams;
-                else if (!item.grams) item.grams = 100;
+                const grams = main ? replacementPortion(meal, item, product) : item.group === 'yogurt' ? product.packageGrams : item.grams;
+                item.product = product; item.grams = grams;
+                if (!item.grams) item.grams = 100;
                 balanceDay(day, plan.groups, target, item, journal.preferences());
                 invalidateDraft(); renderPlan();
               });
@@ -264,6 +268,10 @@ function renderPlan({ preserveBasket = false } = {}) {
           finally { find.disabled = false; }
         });
         alternative.append(query, find, results); box.append(alternative); section.append(box);
+      }
+      if (['Обед', 'Ужин'].includes(meal.name)) {
+        const check = mainMealCheck(meal);
+        section.append(element('p', check.status === 'suitable' ? 'Салат и второе/суп: 350–600 ккал, не менее 20 г белка и не более 25 г жиров в сумме.' : 'Это сочетание не прошло проверку полноценного приёма пищи. Проверьте порции и состав: нужны салат и второе или суп, известные КБЖУ, 350–600 ккал и не менее 20 г белка.', 'muted'));
       }
     }
     const exact = complete ? totals(dayEntries) : null;
@@ -282,7 +290,7 @@ function renderPlan({ preserveBasket = false } = {}) {
 build.addEventListener('click', async () => {
   if (build.disabled) return;
   build.disabled = true; clearPlan(); const revision = planRevision;
-  planStatus.textContent = 'Ищем товары для девяти групп. Это может занять до минуты…';
+  planStatus.textContent = 'Ищем товары и сочетания для обеда и ужина. Это может занять до минуты…';
   try {
     const result = await api('/api/plan', { method: 'POST', body: JSON.stringify({ preferences: journal.preferences() }) });
     if (revision !== planRevision) return;

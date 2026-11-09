@@ -8,9 +8,9 @@ import { createWorker } from '../src/index.js';
 const target = dailyTarget();
 const scaled = scale => Object.fromEntries(['kcal', 'protein', 'fat', 'carbs'].map(k => [k, { min: target[k] * scale, max: target[k] * scale }]));
 const nutrition = Object.fromEntries(['kcal', 'protein', 'fat', 'carbs'].map(k => [k, target[k] * 0.1]));
-const p = (id, overrides = {}) => ({ id, name: `Синтетическое блюдо ${id}`, packageGrams: 200, availability: 'available', nutrition, reviews: { average: 4.8, count: 100 }, ...overrides });
-const groups = { ready: [p(1), p(2)], yogurt: [p(3)], curd: [], fruit: [], pastila: [], sweet: [] };
-const context = () => ({ slots: ['lunch', 'dinner', 'snack'], eaten: scaled(0.4), preferences: { blocked: [], liked: [], recent: [] } });
+const p = (id, overrides = {}) => ({ id, name: `Синтетическое блюдо ${id}`, packageGrams: 200, availability: 'available', categories: ['Готовая еда'], nutrition, reviews: { average: 4.8, count: 100 }, ...overrides });
+const groups = { ready: [p(1), p(2)], yogurt: [p(3)], salad: [p(4, { name: 'Салат тестовый с курицей', packageGrams: 100 })], soup: [], curd: [], fruit: [], pastila: [], sweet: [] };
+const context = () => ({ slots: ['lunch', 'dinner', 'snack'], eaten: scaled(0.2), preferences: { blocked: [], liked: [], recent: [] } });
 const enabled = () => ({ ...environment().env, AI_ENABLED: 'true', OPENAI_API_KEY: 'synthetic-test-key' });
 const answer = choices => Response.json({ status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify({ choices }) }] }] });
 
@@ -20,7 +20,8 @@ test('today uses eaten macros once, whole meals and explicit remaining slots', (
   assert.ok(Math.abs(result.dayBounds.kcal.min - 1500) < 0.001);
   assert.equal(result.meals.length, 3);
   assert.deepEqual(result.meals.map(m => m.key), ['lunch', 'dinner', 'snack']);
-  assert.ok(result.meals.every(m => m.items.every(i => i.grams === i.product.packageGrams)));
+  assert.ok(result.meals.slice(0, 2).every(m => m.items.length === 2 && m.items.some(i => i.group === 'salad')));
+  assert.ok(result.meals.every(m => m.items.every(i => i.grams <= i.product.packageGrams)));
   assert.notEqual(result.meals[0].items[0].product.id, result.meals[1].items[0].product.id);
 });
 test('unknown diary, reached target, missing products and invalid slots never fabricate', () => {
@@ -33,8 +34,8 @@ test('unknown diary, reached target, missing products and invalid slots never fa
 });
 test('today preserves ranges and excludes user-blocked and unavailable products', () => {
   const input = context(); input.preferences.blocked = [1]; input.eaten.kcal.max += 30;
-  const result = suggestToday({ ...groups, ready: [...groups.ready, p(4, { availability: 'unavailable' })] }, input);
-  assert.ok(result.meals.flatMap(m => m.items).every(i => ![1, 4].includes(i.product.id)));
+  const result = suggestToday({ ...groups, ready: [...groups.ready, p(8, { availability: 'unavailable' })] }, input);
+  assert.ok(result.meals.flatMap(m => m.items).every(i => ![1, 8].includes(i.product.id)));
   assert.ok(Math.abs(result.dayBounds.kcal.max - result.dayBounds.kcal.min - 30) < 0.001);
 });
 test('AI quota is atomic, global for the application and persists independently of login', async () => {
@@ -96,7 +97,7 @@ test('today HTTP route rejects malformed input and unauthenticated AI before MCP
 
 test('AI variant further from the daily goal falls back to the checked algorithm', async () => {
   const input = context();
-  const varied = { ...groups, ready: [...groups.ready, p(9, { nutrition: { ...nutrition, kcal: 500 } })] };
+  const varied = { ...groups, ready: [...groups.ready, p(9, { nutrition: { ...nutrition, kcal: 300 } })] };
   const baseline = suggestToday(varied, input);
   const result = await aiSuggest(enabled(), input, varied, baseline, async (url, options) => {
     const body = JSON.parse(options.body), offered = JSON.parse(body.input).options;
@@ -124,8 +125,8 @@ test('authenticated HTTP AI requires consent and fails safely to the algorithm o
     if (method === 'tools/list') return { tools: [{ name: 'vkusvill_products_search', inputSchema: { properties: { q: { type: 'string' } } } }] };
     catalogCalls++;
     const q = params.arguments.q;
-    const names = { 'готовые блюда': 'Тестовое готовое блюдо', 'йогурт': 'Тестовый йогурт' };
-    return { structuredContent: { ok: true, data: { items: names[q] ? [{ id: q === 'йогурт' ? 3 : 1, name: names[q], unit: 'шт', weight: { value: 200, unit: 'г' }, price: { current: 100 }, category: [{ name: 'Готовые блюда' }], properties: [{ name: 'Ценность на 100 г', value: 'белки 10,1 г; жиры 5,8 г; углеводы 14,4 г; 150 ккал' }] }] : [] } } };
+    const names = { 'готовые блюда': 'Тестовое готовое блюдо', 'йогурт': 'Тестовый йогурт', 'салат': 'Салат тестовый с курицей' };
+    return { structuredContent: { ok: true, data: { items: names[q] ? [{ id: q === 'йогурт' ? 3 : q === 'салат' ? 4 : 1, name: names[q], unit: 'шт', weight: { value: q === 'салат' ? 100 : 200, unit: 'г' }, price: { current: 100 }, category: [{ name: 'Готовые блюда' }], properties: [{ name: 'Ценность на 100 г', value: 'белки 10,1 г; жиры 5,8 г; углеводы 14,4 г; 150 ккал' }] }] : [] } } };
   };
   const worker = createWorker(async operation => operation(rpc), async () => { providerCalls++; return new Response('secret provider failure', { status: 500 }); });
   const req = body => new Request('https://api.example/api/today', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sid}`, Origin: env.ALLOWED_ORIGIN }, body: JSON.stringify(body) });

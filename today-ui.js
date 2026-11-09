@@ -8,7 +8,7 @@ const boundsText = b => Object.entries({ kcal: 'ккал', protein: 'Б', fat: '
 export function mountToday(root, { api, journal, available, onBasket, onInvalidate }) {
   let revision = 0, busy = false, current = null;
   root.append(el('h2', 'Что съесть сегодня'));
-  root.append(el('p', 'Отметьте, какие приёмы пищи ещё остались. Подбор учитывает только то, что вы сами записали в дневник. Готовые обеды и ужины — целыми упаковками.'));
+  root.append(el('p', 'Отметьте, какие приёмы пищи ещё остались. Подбор учитывает только то, что вы сами записали в дневник. Обед и ужин — салат и второе или салат и суп. Порции могут быть меньше упаковки; остатки видны в списке покупок.'));
   const slots = el('fieldset'); slots.append(el('legend', 'Ещё планирую съесть'));
   const checks = Object.entries(MEALS).map(([key, name]) => { const label = el('label', name + ' '), input = el('input'); input.type = 'checkbox'; input.value = key; input.checked = key !== 'breakfast'; label.prepend(input); label.style.display = 'block'; slots.append(label); return input; });
   const build = el('button', 'Подобрать остаток дня');
