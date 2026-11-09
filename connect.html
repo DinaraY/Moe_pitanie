@@ -18,17 +18,13 @@
   <section class="card">
     <h2>Подключение магазина</h2>
     <p>Чтобы проверить ассортимент для доставки, выберите точный адрес в Долгопрудном в личном кабинете ВкусВилла и разрешите доступ через официальный экран входа.</p>
-    <label for="server">Сервер приложения</label><br>
-    <select id="server">
-      <option value="testing" selected>Моё питание 2</option>
-      <option value="production">Основной</option>
-      <option value="staging">Тестовый</option>
-    </select>
+    <input id="server" type="hidden" value="testing">
+    <p><label><input id="remember" type="checkbox" checked> Сохранять вход на этом устройстве</label></p>
     <p id="status" role="status" aria-live="polite">Проверяем соединение…</p>
     <button id="connect" disabled>Подключить ВкусВилл</button>
     <button id="logout" class="secondary" hidden>Отключить сессию</button>
     <button id="retry" class="secondary">Проверить снова</button>
-    <p><small>Пароли вводятся только на сайте ВкусВилла. Сессия приложения действует до часа и хранится в памяти этой вкладки. После перезагрузки потребуется повторный вход.</small></p>
+    <p><small>Пароли вводятся только на сайте ВкусВилла. Сохранённый вход восстанавливается после повторного открытия до окончания разрешения магазина, максимум в течение суток. Кнопка выхода завершает сессию.</small></p>
   </section>
   <section class="card" id="planner" hidden>
     <h2>Меню на 2 дня</h2>
@@ -63,6 +59,6 @@
     <p><small>Перед созданием ссылки на корзину вы проверите состав и подтвердите его. Автоматическое оформление заказа не подключено.</small></p>
   </section>
 </main>
-<script type="module" src="connect.js"></script>
+<script type="module" src="connect.js?v=20261109-cart-login2"></script>
 </body>
 </html>

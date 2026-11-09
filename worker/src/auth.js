@@ -1,5 +1,6 @@
 const RESOURCE = 'https://mcp.vkusvill.ru/mcp';
 const SESSION_MS = 60 * 60 * 1000;
+const REMEMBER_MS = 24 * SESSION_MS;
 const FLOW_MS = 10 * 60 * 1000;
 const encoder = new TextEncoder();
 const b64 = bytes => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -86,15 +87,36 @@ export async function storage(env, identifier, action, value) {
   return response.json();
 }
 const cookie = (value, age) => `__Host-vv_state=${value}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=${age}`;
-const redirect = (location, extra = {}) => new Response(null, { status: 303, headers: { Location: location, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', ...extra } });
+const resumeCookie = (value, age) => `__Host-moe_session=${value}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=${age}`;
+const readCookie = (request, name) => request.headers.get('Cookie')?.split(';').map(x => x.trim()).find(x => x.startsWith(name + '='))?.slice(name.length + 1);
+const redirect = (location, extra = {}) => {
+  const headers = new Headers({ Location: location, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
+  for (const [name, value] of Object.entries(extra)) for (const item of Array.isArray(value) ? value : [value]) headers.append(name, item);
+  return new Response(null, { status: 303, headers });
+};
 
 export async function oauth(request, env, transport = fetch) {
   const config = configuration(env);
   const url = new URL(request.url);
   if (url.origin !== new URL(config.callback).origin) throw new Error('OAUTH_WRONG_ORIGIN');
+  const serverName = ['production', 'staging', 'testing'].includes(env.APP_SERVER) ? env.APP_SERVER : env.APP_ENV === 'staging' ? 'staging' : 'production';
+  const server = serverName === 'production' ? '' : '&server=' + serverName;
+  if (url.pathname === '/oauth/restore' && request.method === 'GET') {
+    const session = readCookie(request, '__Host-moe_session');
+    if (session && /^[A-Za-z0-9_-]{43}$/.test(session)) {
+      const { record } = await storage(env, session, 'read');
+      if (record) {
+        const secret = await open(env, record.payload, session);
+        if (secret.remembered === true && typeof secret.accessToken === 'string' && secret.accessToken) {
+          return redirect(config.returnUrl + '#session=' + session + server);
+        }
+      }
+    }
+    return redirect(config.returnUrl + '#auth=expired' + server, { 'Set-Cookie': resumeCookie('', 0) });
+  }
   if (url.pathname === '/oauth/start' && request.method === 'GET') {
     const state = random(), verifier = random(), browser = random();
-    const payload = await seal(env, { verifier, browserHash: await digest(browser) }, state);
+    const payload = await seal(env, { verifier, browserHash: await digest(browser), remembered: url.searchParams.get('remember') === '1' }, state);
     const created = await storage(env, state, 'create', { expiresAt: Date.now() + FLOW_MS, payload });
     if (!created.ok) throw new Error('AUTH_STORE_UNAVAILABLE');
     const target = new URL(config.authorize);
@@ -103,7 +125,7 @@ export async function oauth(request, env, transport = fetch) {
   }
   if (url.pathname !== '/oauth/callback' || request.method !== 'GET') return new Response(null, { status: 404 });
   const state = url.searchParams.get('state');
-  const browser = request.headers.get('Cookie')?.split(';').map(x => x.trim()).find(x => x.startsWith('__Host-vv_state='))?.slice('__Host-vv_state='.length);
+  const browser = readCookie(request, '__Host-vv_state');
   if (!state || !/^[A-Za-z0-9_-]{43}$/.test(state) || !browser || !/^[A-Za-z0-9_-]{43}$/.test(browser)) throw new Error('INVALID_OAUTH_STATE');
   // Check the browser binding before consuming state; arbitrary callers cannot burn it.
   const { record } = await storage(env, state, 'read');
@@ -112,8 +134,6 @@ export async function oauth(request, env, transport = fetch) {
   if (flow.browserHash !== await digest(browser)) throw new Error('INVALID_OAUTH_STATE');
   const consumed = await storage(env, state, 'consume');
   if (!consumed.record) throw new Error('INVALID_OAUTH_STATE');
-  const serverName = ['production', 'staging', 'testing'].includes(env.APP_SERVER) ? env.APP_SERVER : env.APP_ENV === 'staging' ? 'staging' : 'production';
-  const server = serverName === 'production' ? '' : '&server=' + serverName;
   if (url.searchParams.has('error')) return redirect(config.returnUrl + '#auth=denied' + server, { 'Set-Cookie': cookie('', 0) });
   const code = url.searchParams.get('code');
   if (!code || code.length > 4096) throw new Error('INVALID_OAUTH_CODE');
@@ -134,11 +154,12 @@ export async function oauth(request, env, transport = fetch) {
   const tokens = JSON.parse(text + decoder.decode());
   if (typeof tokens.access_token !== 'string' || !tokens.access_token || /[\r\n]/.test(tokens.access_token) || tokens.token_type?.toLowerCase() !== 'bearer' || !Number.isFinite(tokens.expires_in) || tokens.expires_in <= 0) throw new Error('OAUTH_EXCHANGE_FAILED');
   const session = random();
-  const expiresAt = Date.now() + Math.min(SESSION_MS, tokens.expires_in * 1000);
+  const remembered = flow.remembered === true;
+  const expiresAt = Date.now() + Math.min(remembered ? REMEMBER_MS : SESSION_MS, tokens.expires_in * 1000);
   // Refresh token deliberately discarded: re-consent on expiry until refresh is verified.
-  const payload = await seal(env, { accessToken: tokens.access_token, scope: tokens.scope || env.VV_SCOPE }, session);
+  const payload = await seal(env, { accessToken: tokens.access_token, scope: tokens.scope || env.VV_SCOPE, remembered }, session);
   if (!(await storage(env, session, 'create', { expiresAt, payload })).ok) throw new Error('AUTH_STORE_UNAVAILABLE');
-  return redirect(config.returnUrl + '#session=' + session + server, { 'Set-Cookie': cookie('', 0) });
+  return redirect(config.returnUrl + '#session=' + session + server, { 'Set-Cookie': [cookie('', 0), resumeCookie(remembered ? session : '', remembered ? Math.max(1, Math.floor((expiresAt - Date.now()) / 1000)) : 0)] });
 }
 
 export async function sessionFor(request, env) {
@@ -150,5 +171,5 @@ export async function sessionFor(request, env) {
   const { record } = await storage(env, session, 'read');
   if (!record) throw new Error('SESSION_EXPIRED');
   const secret = await open(env, record.payload, session);
-  return { accessToken: secret.accessToken, expiresAt: record.expiresAt, owner: await digest(session), destroy: () => storage(env, session, 'delete') };
+  return { accessToken: secret.accessToken, expiresAt: record.expiresAt, remembered: secret.remembered === true, owner: await digest(session), destroy: () => storage(env, session, 'delete') };
 }

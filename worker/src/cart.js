@@ -1,6 +1,7 @@
 import { storage, seal, open, digest } from './auth.js';
 import { details, officialUrl, payload } from './catalog.js';
 import { quote } from './planner.js';
+const DISPLAY_VERSION = 'cart-v2';
 const contextFor = (session, id) => `cart:${session.owner}:${id}`;
 function validate(entries) {
   if (!Array.isArray(entries) || !entries.length || entries.length > 60) throw new Error('INVALID_PLAN');
@@ -20,9 +21,9 @@ export async function createDraft(env, session, rpc, tools, entries) {
   const id = crypto.randomUUID(), context = contextFor(session, id);
   const expiresAt = Math.min(Date.now() + 5 * 60 * 1000, session.expiresAt);
   const version = await digest(JSON.stringify(comparison(summary)));
-  const encrypted = await seal(env, { entries, summary, version }, context);
+  const encrypted = await seal(env, { entries, summary, version, displayVersion: DISPLAY_VERSION }, context);
   if (!(await storage(env, context, 'create', { kind: 'cart', status: 'pending', expiresAt, payload: encrypted })).ok) throw new Error('AUTH_STORE_UNAVAILABLE');
-  return { id, version, expiresAt, summary };
+  return { id, version, expiresAt, summary, displayVersion: DISPLAY_VERSION };
 }
 export async function confirmDraft(env, session, rpc, tools, input) {
   if (input.confirmed !== true || !/^[0-9a-f-]{36}$/i.test(input.id || '') || !/^[A-Za-z0-9_-]{43}$/.test(input.version || '')) throw new Error('CONFIRMATION_REQUIRED');
@@ -31,6 +32,7 @@ export async function confirmDraft(env, session, rpc, tools, input) {
   if (!record) return { error: 'DRAFT_EXPIRED' };
   const draft = await open(env, record.payload, context);
   if (draft.version !== input.version) return { error: 'DRAFT_CHANGED' };
+  if (draft.displayVersion !== DISPLAY_VERSION || input.displayVersion !== DISPLAY_VERSION) return { error: 'CLIENT_UPDATE_REQUIRED' };
   if (record.status === 'done') return open(env, record.result, context);
   // Validate tool schema before claiming. New write tools never become available implicitly.
   const tool = tools.find(t => t.name === 'vkusvill_cart_link_create');
@@ -42,6 +44,9 @@ export async function confirmDraft(env, session, rpc, tools, input) {
     const fresh = await refresh(rpc, tools, draft.entries);
     if (!fresh.ready || await digest(JSON.stringify(comparison(fresh))) !== draft.version) {
       await storage(env, context, 'fail'); return { error: 'DRAFT_CHANGED', summary: fresh };
+    }
+    if (Date.now() >= record.expiresAt) {
+      await storage(env, context, 'fail'); return { error: 'DRAFT_EXPIRED' };
     }
     const data = payload(await rpc('tools/call', {
       name: 'vkusvill_cart_link_create', arguments: { products: fresh.lines.map(l => ({ id: l.product.id, q: l.quantity })) }

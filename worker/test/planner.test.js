@@ -58,6 +58,9 @@ test('portion calories and purchased packages are separate; missing data is neve
   assert.equal(weighted.lines[0].quantity, 0.16);
   assert.equal(weighted.total, 16);
   assert.equal(weighted.estimated, true);
+  const exactWeight = quote([{ product: { ...product, unit: 'кг', packageGrams: null }, grams: 1100 }]);
+  assert.equal(exactWeight.lines[0].quantity, 1.1);
+  assert.equal(exactWeight.total, 110);
 });
 test('different manufacturers produce a range; identical values stay exact', () => {
   const one = 'АО ТЕСТ А: белки 10 г, жиры 4 г, углеводы 11 г; 120 ккал';
@@ -104,7 +107,7 @@ test('draft ownership, explicit consent and duplicate confirmation', async () =>
   assert.ok(draft.id); assert.equal(store.count(), 0);
   await assert.rejects(() => confirmDraft(env, session, store.rpc, tools, { ...draft, confirmed: false }), /CONFIRMATION_REQUIRED/);
   assert.equal((await confirmDraft(env, { ...session, owner: 'other-owner' }, store.rpc, tools, { ...draft, confirmed: true })).error, 'DRAFT_EXPIRED');
-  const input = { id: draft.id, version: draft.version, confirmed: true };
+  const input = { id: draft.id, version: draft.version, displayVersion: draft.displayVersion, confirmed: true };
   const results = await Promise.all([confirmDraft(env, session, store.rpc, tools, input), confirmDraft(env, session, store.rpc, tools, input)]);
   assert.equal(store.count(), 1);
   assert.ok(results.some(r => r.link));
@@ -126,8 +129,32 @@ test('unsafe returned links are rejected and a failed draft never calls again', 
   const { env } = environment(); const store = upstream('https://evil.example/checkout');
   const session = { owner: 'owner', expiresAt: Date.now() + 3600000 };
   const draft = await createDraft(env, session, store.rpc, tools, [{ id: 1, grams: 100 }]);
-  const input = { id: draft.id, version: draft.version, confirmed: true };
+  const input = { id: draft.id, version: draft.version, displayVersion: draft.displayVersion, confirmed: true };
   await assert.rejects(() => confirmDraft(env, session, store.rpc, tools, input), /UNSAFE_CART_LINK/);
   assert.equal((await confirmDraft(env, session, store.rpc, tools, input)).error, 'DRAFT_ALREADY_USED');
   assert.equal(store.count(), 1);
+});
+test('a draft expiring during the stock recheck never creates a cart link', async () => {
+  const realNow = Date.now; let now = realNow(); Date.now = () => now;
+  try {
+    const { env } = environment(); const store = upstream();
+    const session = { owner: 'owner', expiresAt: now + 60000 };
+    const draft = await createDraft(env, session, store.rpc, tools, [{ id: 1, grams: 100 }]);
+    const delayed = async (method, params) => {
+      const response = await store.rpc(method, params);
+      if (params.name === 'vkusvill_product_details') now += 61000;
+      return response;
+    };
+    const result = await confirmDraft(env, session, delayed, tools, { ...draft, confirmed: true });
+    assert.equal(result.error, 'DRAFT_EXPIRED');
+    assert.equal(store.count(), 0);
+  } finally { Date.now = realNow; }
+});
+test('an old page with rounded weights cannot confirm a new cart draft', async () => {
+  const { env } = environment(); const store = upstream();
+  const session = { owner: 'owner', expiresAt: Date.now() + 3600000 };
+  const draft = await createDraft(env, session, store.rpc, tools, [{ id: 1, grams: 100 }]);
+  const result = await confirmDraft(env, session, store.rpc, tools, { id: draft.id, version: draft.version, confirmed: true });
+  assert.equal(result.error, 'CLIENT_UPDATE_REQUIRED');
+  assert.equal(store.count(), 0);
 });

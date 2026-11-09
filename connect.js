@@ -1,4 +1,4 @@
-import { nutrients, totals, nutrientBounds, totalBounds, quote } from './shared/food.js';
+import { nutrients, totals, nutrientBounds, totalBounds, quote } from './shared/food.js?v=20261109-cart-login2';
 const servers = Object.freeze({
   testing: 'https://moe-pitanie-2.statusdi.workers.dev',
   production: 'https://moe-pitanie-api.statusdi.workers.dev',
@@ -9,7 +9,19 @@ const status = document.getElementById('status');
 const connect = document.getElementById('connect');
 const logout = document.getElementById('logout');
 const retry = document.getElementById('retry');
+const remember = document.getElementById('remember');
+const RESUME_KEY = 'moe-pitanie.resume.v1';
+const REMEMBER_KEY = 'moe-pitanie.remember.v1';
+// Only a preference and expiry marker are persisted. No session IDs or shop tokens.
+const readLocal = key => { try { return localStorage.getItem(key); } catch { return null; } };
+const writeLocal = (key, value) => { try { if (value === null) localStorage.removeItem(key); else localStorage.setItem(key, value); } catch {} };
+remember.checked = readLocal(REMEMBER_KEY) !== 'false';
+remember.addEventListener('change', () => {
+  writeLocal(REMEMBER_KEY, String(remember.checked));
+  if (!remember.checked) writeLocal(RESUME_KEY, null);
+});
 let capabilities = {}, plan = null, draft = null, planRevision = 0;
+let draftTimer;
 const planner = document.getElementById('planner');
 const basket = document.getElementById('basket');
 const build = document.getElementById('build');
@@ -23,6 +35,8 @@ const fragment = new URLSearchParams(location.hash.slice(1));
 let session = fragment.get('session');
 if (!/^[A-Za-z0-9_-]{43}$/.test(session || '')) session = null;
 const denied = fragment.get('auth') === 'denied';
+const expired = fragment.get('auth') === 'expired';
+if (denied || expired) writeLocal(RESUME_KEY, null);
 const returnedServer = fragment.get('server');
 history.replaceState(null, '', location.pathname + location.search);
 if (Object.hasOwn(servers, returnedServer)) server.value = returnedServer;
@@ -55,6 +69,8 @@ async function check() {
       const account = await api('/api/session');
       if (current !== generation) return;
       if (!account.authenticated) throw new Error('SESSION_EXPIRED');
+      if (account.remembered && remember.checked) writeLocal(RESUME_KEY, JSON.stringify({ server: server.value, expiresAt: account.expiresAt }));
+      else writeLocal(RESUME_KEY, null);
       connect.disabled = true;
       status.textContent = 'ВкусВилл подключён. Подберите товары: наличие по адресу будет проверено для каждой позиции.';
     } else {
@@ -62,6 +78,7 @@ async function check() {
         ? 'Сервер готов к входу. Подтвердите доступ на сайте ВкусВилла.'
         : 'Сервер доступен. Вход через ВкусВилл ещё не настроен владельцем приложения.';
       if (denied) status.textContent += ' Доступ не был подтверждён.';
+      if (expired) status.textContent = 'Срок входа истёк. Подключите ВкусВилл снова.';
     }
   } catch {
     if (current !== generation) return;
@@ -71,28 +88,38 @@ async function check() {
       status.textContent = 'Сервер пока недоступен или не обновлён. Примерное меню на главной странице продолжает работать.';
     }
   } finally {
-    if (current === generation) { retry.disabled = false; server.disabled = !!session; logout.hidden = !session; }
+    if (current === generation) { retry.disabled = false; server.disabled = !!session; remember.disabled = !!session; logout.hidden = !session; }
   }
 }
 connect.addEventListener('click', () => {
-  if (!connect.disabled) location.assign(servers[server.value] + '/oauth/start');
+  if (!connect.disabled) {
+    writeLocal(REMEMBER_KEY, String(remember.checked));
+    location.assign(servers[server.value] + '/oauth/start' + (remember.checked ? '?remember=1' : ''));
+  }
 });
 logout.addEventListener('click', async () => {
   logout.disabled = true;
   try {
     await api('/api/session', { method: 'DELETE' });
+    writeLocal(RESUME_KEY, null);
     session = null;
     clearPlan();
     await check();
     status.textContent = 'Сессия приложения отключена. Полностью отозвать доступ можно в настройках ВкусВилла.';
-  } catch { status.textContent = 'Не удалось отключить сессию на сервере. Повторите попытку; она также завершится по сроку действия.'; }
+  } catch (error) {
+    if (error.message === 'SESSION_EXPIRED') {
+      session = null; writeLocal(RESUME_KEY, null); clearPlan(); await check();
+      status.textContent = 'Сессия приложения завершена.';
+    } else status.textContent = 'Не удалось отключить сессию на сервере. Повторите попытку; она также завершится по сроку действия.';
+  }
   finally { logout.disabled = false; }
 });
 server.addEventListener('change', () => { clearPlan(); check(); });
 retry.addEventListener('click', check);
 
 const format = value => value === null || value === undefined ? 'нет данных' : new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 }).format(value);
-const money = value => value === null ? 'цена неизвестна' : `${format(value)} ₽`;
+const quantityText = value => value === null || value === undefined ? 'нет данных' : new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 3 }).format(value);
+const money = value => value === null ? 'цена неизвестна' : new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
 const macroText = value => value ? `${format(value.kcal)} ккал · Б ${format(value.protein)} · Ж ${format(value.fat)} · У ${format(value.carbs)} г` : 'КБЖУ неизвестны или не указана масса порции';
 const rangeText = bounds => {
   const f = value => value.min === value.max ? format(value.min) : `${format(value.min)}–${format(value.max)}`;
@@ -107,7 +134,9 @@ function element(tag, content, className) {
   if (className) node.className = className; return node;
 }
 function invalidateDraft() {
+  clearTimeout(draftTimer);
   planRevision++; draft = null; approve.checked = false; confirm.disabled = true;
+  approve.disabled = false;
   document.getElementById('confirmation').hidden = true;
   document.getElementById('draft').replaceChildren();
   document.getElementById('cart-link').replaceChildren();
@@ -129,7 +158,7 @@ function summaryView(summary) {
   for (const line of summary.lines) {
     const row = element('p');
     row.append(element('strong', line.product.name), element('br'));
-    row.append(document.createTextNode(`${format(line.quantity)} ${line.product.unit || 'единиц'} × ${money(line.product.price)} = ${money(line.subtotal)}`));
+    row.append(document.createTextNode(`${quantityText(line.quantity)} ${line.product.unit || 'единиц'} × ${money(line.product.price)} = ${money(line.subtotal)}`));
     if (line.leftoverGrams !== null) row.append(element('br'), element('small', `На меню ${format(line.grams)} г; расчётный остаток по массе упаковки ${format(line.leftoverGrams)} г.`));
     if (!line.available) row.append(element('br'), element('small', 'Наличие нужного количества не подтверждено.'));
     box.append(row);
@@ -159,7 +188,7 @@ function renderPlan() {
             variants.append(element('small', 'Точные значения вашей упаковки указаны на этикетке.'));
             box.append(variants);
           }
-          box.append(element('p', p.availability === 'available' ? `По адресу доступно: ${format(p.availableQuantity)} ${p.unit || ''}` : 'Наличие по адресу не подтверждено.', 'muted'));
+          box.append(element('p', p.availability === 'available' ? `По адресу доступно: ${quantityText(p.availableQuantity)} ${p.unit || ''}` : 'Наличие по адресу не подтверждено.', 'muted'));
           const label = element('label', 'Съедаемая порция, г: ');
           const input = element('input'); input.type = 'number'; input.min = '1'; input.max = '5000'; input.step = '1'; input.value = item.grams ?? ''; input.style.cssText = 'width:80px;font:inherit;padding:8px';
           input.setAttribute('aria-label', `Порция: ${p.name}, день ${day.day}, ${meal.name}`);
@@ -248,6 +277,13 @@ prepare.addEventListener('click', async () => {
     const result = await api('/api/cart/draft', { method: 'POST', body: JSON.stringify({ entries: selected.map(e => ({ id: e.product.id, grams: e.grams })) }) });
     if (revision !== planRevision) return;
     draft = result;
+    const draftId = draft.id;
+    draftTimer = setTimeout(() => {
+      if (draft?.id !== draftId) return;
+      draft = null; approve.checked = false; approve.disabled = true; confirm.disabled = true;
+      document.getElementById('confirmation').hidden = true;
+      cartStatus.textContent = 'Расчёт устарел. Нажмите «Проверить цены и наличие» и подтвердите свежую корзину.';
+    }, Math.max(0, draft.expiresAt - Date.now()));
     document.getElementById('draft').append(summaryView(draft.summary));
     document.getElementById('confirmation').hidden = false;
     cartStatus.textContent = capabilities.cartEnabled ? `Проверьте свежий расчёт. Подтверждение действует до ${new Date(draft.expiresAt).toLocaleTimeString('ru-RU')}.` : 'Цены и наличие проверены. Создание ссылки пока выключено владельцем приложения.';
@@ -257,13 +293,13 @@ prepare.addEventListener('click', async () => {
     cartStatus.textContent = 'Полную корзину подтвердить нельзя: не хватает данных, наличия или соединения. Проверьте позиции и повторите проверку.';
   } finally { prepare.disabled = !entries(); }
 });
-approve.addEventListener('change', () => { confirm.disabled = !approve.checked || !draft || !capabilities.cartEnabled || draft.expiresAt <= Date.now(); });
+approve.addEventListener('change', () => { confirm.disabled = !approve.checked || !draft || draft.displayVersion !== 'cart-v2' || !capabilities.cartEnabled || draft.expiresAt <= Date.now(); });
 confirm.addEventListener('click', async () => {
-  if (confirm.disabled || !approve.checked || !draft || draft.expiresAt <= Date.now()) return;
+  if (confirm.disabled || !approve.checked || !draft || draft.displayVersion !== 'cart-v2' || draft.expiresAt <= Date.now()) return;
   confirm.disabled = true; prepare.disabled = true; build.disabled = true;
   const revision = planRevision;
   try {
-    const result = await api('/api/cart/confirm', { method: 'POST', body: JSON.stringify({ id: draft.id, version: draft.version, confirmed: true }) });
+    const result = await api('/api/cart/confirm', { method: 'POST', body: JSON.stringify({ id: draft.id, version: draft.version, displayVersion: draft.displayVersion, confirmed: true }) });
     if (revision !== planRevision) return;
     const url = new URL(result.link);
     if (url.protocol !== 'https:' || !['vkusvill.ru', 'www.vkusvill.ru'].includes(url.hostname) || url.username || url.password || url.port) throw new Error('UNSAFE_LINK');
@@ -271,7 +307,20 @@ confirm.addEventListener('click', async () => {
     document.getElementById('cart-link').replaceChildren(link);
     cartStatus.textContent = 'Ссылка создана. Заказ не оформлен; проверьте корзину и оплатите во ВкусВилле.';
     document.getElementById('confirmation').hidden = true;
+    clearTimeout(draftTimer); draft = null; approve.checked = false;
   } catch { if (revision === planRevision) cartStatus.textContent = 'Ссылка не получена либо данные изменились. Сначала заново проверьте цены и наличие, затем подтвердите новую корзину.'; }
   finally { prepare.disabled = !entries(); build.disabled = false; }
 });
-check();
+function restoreLogin() {
+  if (session || denied || expired || !remember.checked) return false;
+  try {
+    const marker = JSON.parse(readLocal(RESUME_KEY));
+    if (!marker || !Object.hasOwn(servers, marker.server) || !Number.isFinite(marker.expiresAt) || marker.expiresAt <= Date.now()) {
+      writeLocal(RESUME_KEY, null); return false;
+    }
+    status.textContent = 'Восстанавливаем вход…';
+    location.replace(servers[marker.server] + '/oauth/restore');
+    return true;
+  } catch { writeLocal(RESUME_KEY, null); return false; }
+}
+if (!restoreLogin()) check();

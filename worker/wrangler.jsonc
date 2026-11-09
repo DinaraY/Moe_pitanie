@@ -8,7 +8,7 @@
     "ALLOWED_ORIGIN": "https://dinaray.github.io",
     "CATALOG_ENABLED": "true",
     "OAUTH_ENABLED": "true",
-    "CART_ENABLED": "false",
+    "CART_ENABLED": "true",
     "VV_AUTHORIZATION_ENDPOINT": "https://oauth.vkusvill.ru/oauth2/auth",
     "VV_TOKEN_ENDPOINT": "https://oauth.vkusvill.ru/oauth2/token",
     "VV_SCOPE": "catalog.search",
