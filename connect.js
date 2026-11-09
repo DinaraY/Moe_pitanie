@@ -1,7 +1,10 @@
-import { reviewText } from './shared/reviews.js?v=20261109-reviews1';
-import { createJournal } from './journal-ui.js?v=20261109-reviews1';
-import { dailyTarget, balanceDay, assessment } from './shared/targets.js?v=20261109-reviews1';
-import { nutrients, totals, nutrientBounds, totalBounds, quote } from './shared/food.js?v=20261109-reviews1';
+import { mainMealCheck, replacementPortion } from './shared/meals.js?v=20261109-today1';
+import { mountToday } from './today-ui.js?v=20261109-today1';
+import { localDate } from './shared/journal.js?v=20261109-today1';
+import { reviewText } from './shared/reviews.js?v=20261109-today1';
+import { createJournal } from './journal-ui.js?v=20261109-today1';
+import { dailyTarget, balanceDay, assessment } from './shared/targets.js?v=20261109-today1';
+import { nutrients, totals, nutrientBounds, totalBounds, quote } from './shared/food.js?v=20261109-today1';
 const servers = Object.freeze({
   testing: 'https://moe-pitanie-2.statusdi.workers.dev',
   production: 'https://moe-pitanie-api.statusdi.workers.dev',
@@ -24,9 +27,9 @@ remember.addEventListener('change', () => {
   if (!remember.checked) writeLocal(RESUME_KEY, null);
 });
 let capabilities = {}, plan = null, draft = null, planRevision = 0;
-let draftTimer;
+let draftTimer, today, todaySelection = null, basketMode = 'plan';
 const journal = createJournal(document.getElementById('journal'), () => {
-  if (plan) { invalidateDraft(); renderPlan(); }
+  if (plan) { invalidateDraft(); renderPlan({ preserveBasket: basketMode === 'today' }); }
 });
 const planner = document.getElementById('planner');
 const basket = document.getElementById('basket');
@@ -52,7 +55,7 @@ async function api(path, options = {}) {
   const response = await fetch(servers[server.value] + path, {
     ...options, credentials: 'omit', cache: 'no-store', redirect: 'error',
     headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...(session ? { Authorization: `Bearer ${session}` } : {}) },
-    signal: AbortSignal.timeout(path === '/api/plan' || path.startsWith('/api/cart/') ? 65000 : 12000)
+    signal: AbortSignal.timeout(path === '/api/today' ? 90000 : path === '/api/plan' || path.startsWith('/api/cart/') ? 65000 : 12000)
   });
   if (!response.headers.get('Content-Type')?.includes('application/json')) throw new Error('UNAVAILABLE');
   const data = await response.json();
@@ -94,7 +97,7 @@ async function check() {
       status.textContent = 'Сервер пока недоступен или не обновлён. Примерное меню на главной странице продолжает работать.';
     }
   } finally {
-    if (current === generation) { retry.disabled = false; server.disabled = !!session; remember.disabled = !!session; logout.hidden = !session; }
+    if (current === generation) { retry.disabled = false; server.disabled = !!session; remember.disabled = !!session; logout.hidden = !session; today?.update(); }
   }
 }
 connect.addEventListener('click', () => {
@@ -149,13 +152,15 @@ function invalidateDraft() {
   cartStatus.textContent = '';
 }
 function clearPlan() {
+  basketMode = 'plan'; todaySelection = null; today?.reset();
   invalidateDraft(); plan = null; basket.hidden = true;
   document.getElementById('days').replaceChildren();
   planStatus.textContent = '';
 }
 const allItems = () => plan ? plan.days.flatMap(day => day.meals.flatMap(meal => meal.items)) : [];
 function entries() {
-  const items = allItems();
+  if (todaySelection && todaySelection.date !== localDate()) return null;
+  const items = todaySelection ? todaySelection.items : allItems();
   if (!items.length || items.some(item => !item.product || !Number.isFinite(item.grams) || item.grams <= 0 || item.grams > 5000)) return null;
   return items.map(item => ({ product: item.product, grams: item.grams }));
 }
@@ -173,7 +178,8 @@ function summaryView(summary) {
   box.append(element('p', 'Доставка и итоговая стоимость уточняются во ВкусВилле.', 'muted'));
   return box;
 }
-function renderPlan() {
+function renderPlan({ preserveBasket = false } = {}) {
+  if (!preserveBasket) { basketMode = 'plan'; todaySelection = null; document.querySelector('#basket h2').textContent = 'Покупки на два дня'; }
   const days = document.getElementById('days'); days.replaceChildren();
   const target = plan.target || dailyTarget();
   days.append(element('p', `Дневной ориентир: ${macroText(target)}. Поддержание веса ≈ ${format(target.maintenance)} ккал; расчётный дефицит ${target.deficit} ккал. Формула Миффлина — Сан Жеора, активность 1,3; белок 1,4 г/кг, жиры 0,8 г/кг, углеводы — остаток. Это оценка; фактическая потребность уточняется по динамике веса.`));
@@ -212,12 +218,14 @@ function renderPlan() {
           if (p.url) { const link = element('a', 'Карточка товара'); link.href = p.url; link.target = '_blank'; link.rel = 'noopener noreferrer'; box.append(element('br'), link); }
           box.append(element('p', `Проверено: ${new Date(p.checkedAt).toLocaleString('ru-RU')}`, 'muted'));
         } else complete = false;
-        const pool = (plan.groups[item.group] || []).filter(p => !journal.isBlocked(p.id));
+        const main = ['Обед', 'Ужин'].includes(meal.name);
+        const pool = (plan.groups[item.group] || []).filter(p => !journal.isBlocked(p.id) && (!main || replacementPortion(meal, item, p) !== null));
         const replace = element('button', 'Заменить'); replace.className = 'secondary'; replace.disabled = !pool.some(p => p.id !== item.product?.id);
         replace.addEventListener('click', () => {
           const index = pool.findIndex(p => p.id === item.product?.id);
-          item.product = pool[(index + 1) % pool.length];
-          if (item.group === 'ready' || item.group === 'yogurt') item.grams = item.product.packageGrams;
+          const product = pool[(index + 1) % pool.length];
+          const grams = main ? replacementPortion(meal, item, product) : item.group === 'yogurt' ? product.packageGrams : item.grams;
+          item.product = product; item.grams = grams;
           balanceDay(day, plan.groups, target, item, journal.preferences());
           invalidateDraft(); renderPlan();
         });
@@ -244,11 +252,12 @@ function renderPlan() {
               const candidate = element('div'); candidate.append(element('p', `${product.name} · ${money(product.price)} / ${product.unit || '?'}`));
               candidate.append(element('p', reviewText(product), 'muted'));
               candidate.append(element('p', `На 100 г: ${nutritionText(product)}`, 'muted'));
-              const choose = element('button', journal.isBlocked(product.id) ? 'Вы исключили этот товар' : product.availability === 'unavailable' ? 'Нет в наличии' : 'Выбрать'); choose.disabled = product.availability === 'unavailable' || journal.isBlocked(product.id);
+              const fitsMeal = !main || replacementPortion(meal, item, product) !== null;
+              const choose = element('button', !fitsMeal ? 'Не подходит для этого сочетания' : journal.isBlocked(product.id) ? 'Вы исключили этот товар' : product.availability === 'unavailable' ? 'Нет в наличии' : 'Выбрать'); choose.disabled = !fitsMeal || product.availability === 'unavailable' || journal.isBlocked(product.id);
               choose.addEventListener('click', () => {
-                item.product = product;
-                if (item.group === 'ready' || item.group === 'yogurt') item.grams = product.packageGrams;
-                else if (!item.grams) item.grams = 100;
+                const grams = main ? replacementPortion(meal, item, product) : item.group === 'yogurt' ? product.packageGrams : item.grams;
+                item.product = product; item.grams = grams;
+                if (!item.grams) item.grams = 100;
                 balanceDay(day, plan.groups, target, item, journal.preferences());
                 invalidateDraft(); renderPlan();
               });
@@ -260,6 +269,10 @@ function renderPlan() {
         });
         alternative.append(query, find, results); box.append(alternative); section.append(box);
       }
+      if (['Обед', 'Ужин'].includes(meal.name)) {
+        const check = mainMealCheck(meal);
+        section.append(element('p', check.status === 'suitable' ? 'Салат и второе/суп: 350–600 ккал, не менее 20 г белка и не более 25 г жиров в сумме.' : 'Это сочетание не прошло проверку полноценного приёма пищи. Проверьте порции и состав: нужны салат и второе или суп, известные КБЖУ, 350–600 ккал и не менее 20 г белка.', 'muted'));
+      }
     }
     const exact = complete ? totals(dayEntries) : null;
     const bounds = complete && !exact ? totalBounds(dayEntries) : null;
@@ -268,6 +281,7 @@ function renderPlan() {
     section.append(element('p', result.status === 'within' ? 'Все показатели в пределах ±10% от ориентира.' : result.status === 'unknown' ? 'Проверить соответствие цели нельзя: не хватает данных КБЖУ или порций.' : 'Есть отклонения от дневной цели. Доступные товары и целые упаковки не позволили попасть во все ориентиры; проверьте итог.', 'muted'));
     days.append(section);
   }
+  if (preserveBasket) return;
   const selected = entries(); const preview = document.getElementById('shopping-preview');
   preview.replaceChildren(); basket.hidden = false; prepare.disabled = !selected;
   if (selected) preview.append(summaryView(quote(selected)));
@@ -276,7 +290,7 @@ function renderPlan() {
 build.addEventListener('click', async () => {
   if (build.disabled) return;
   build.disabled = true; clearPlan(); const revision = planRevision;
-  planStatus.textContent = 'Ищем товары для девяти групп. Это может занять до минуты…';
+  planStatus.textContent = 'Ищем товары и сочетания для обеда и ужина. Это может занять до минуты…';
   try {
     const result = await api('/api/plan', { method: 'POST', body: JSON.stringify({ preferences: journal.preferences() }) });
     if (revision !== planRevision) return;
@@ -311,9 +325,9 @@ prepare.addEventListener('click', async () => {
     cartStatus.textContent = 'Полную корзину подтвердить нельзя: не хватает данных, наличия или соединения. Проверьте позиции и повторите проверку.';
   } finally { prepare.disabled = !entries(); }
 });
-approve.addEventListener('change', () => { confirm.disabled = !approve.checked || !draft || draft.displayVersion !== 'cart-v2' || !capabilities.cartEnabled || draft.expiresAt <= Date.now(); });
+approve.addEventListener('change', () => { confirm.disabled = !entries() || !approve.checked || !draft || draft.displayVersion !== 'cart-v2' || !capabilities.cartEnabled || draft.expiresAt <= Date.now(); });
 confirm.addEventListener('click', async () => {
-  if (confirm.disabled || !approve.checked || !draft || draft.displayVersion !== 'cart-v2' || draft.expiresAt <= Date.now()) return;
+  if (!entries() || confirm.disabled || !approve.checked || !draft || draft.displayVersion !== 'cart-v2' || draft.expiresAt <= Date.now()) return;
   confirm.disabled = true; prepare.disabled = true; build.disabled = true;
   const revision = planRevision;
   try {
@@ -341,4 +355,17 @@ function restoreLogin() {
     return true;
   } catch { writeLocal(RESUME_KEY, null); return false; }
 }
+today = mountToday(document.getElementById('today'), {
+  api, journal, available: () => ({ catalog: !!capabilities.catalogEnabled, ai: !!capabilities.aiAvailable, signedIn: !!session }),
+  onInvalidate: () => {
+    if (todaySelection) { todaySelection = null; invalidateDraft(); basket.hidden = true; }
+  },
+  onBasket: (items, date) => {
+    invalidateDraft(); basketMode = 'today'; todaySelection = { items, date };
+    document.querySelector('#basket h2').textContent = 'Покупки на остаток дня';
+    const selected = entries(); basket.hidden = false; prepare.disabled = !selected;
+    document.getElementById('shopping-preview').replaceChildren(selected ? summaryView(quote(selected)) : element('p', 'Не хватает данных о порциях. Повторите подбор.'));
+    basket.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+});
 if (!restoreLogin()) check();

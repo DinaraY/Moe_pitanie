@@ -1,3 +1,4 @@
+import { preparedComponent, completeMeals } from '../../shared/meals.js';
 import { reviewPenalty } from '../../shared/reviews.js';
 import { search } from './catalog.js';
 import { validatePreferences } from '../../shared/journal.js';
@@ -6,7 +7,9 @@ export const GROUPS = Object.freeze([
   { key: 'eggs', query: 'яйца', label: 'Яйца', grams: 110 },
   { key: 'avocado', query: 'авокадо', label: 'Авокадо', grams: 70 },
   { key: 'vegetables', query: 'помидоры', label: 'Овощи', grams: 150 },
-  { key: 'ready', query: 'готовые блюда', label: 'Готовые блюда', grams: null },
+  { key: 'ready', query: 'готовые блюда', label: 'Второе', grams: null },
+  { key: 'salad', query: 'салат', label: 'Салат', grams: null },
+  { key: 'soup', query: 'суп', label: 'Суп', grams: null },
   { key: 'yogurt', query: 'йогурт', label: 'Йогурт', grams: null },
   { key: 'curd', query: 'творог', label: 'Творог', grams: 150 },
   { key: 'fruit', query: 'яблоки', label: 'Фрукты', grams: 150 },
@@ -14,11 +17,10 @@ export const GROUPS = Object.freeze([
   { key: 'sweet', query: 'шоколад', label: 'Сладкое', grams: 15 }
 ]);
 export { nutrients, totals, quote } from '../../shared/food.js';
-const ready = product => product.categories.some(c => /готов|кулинар/iu.test(c));
 function suitable(product, group) {
   if (product.availability === 'unavailable') return false;
   const name = product.name.toLowerCase();
-  if (group === 'ready') return ready(product) && !(product.packageGrams > 700);
+  if (['ready', 'salad', 'soup'].includes(group)) return preparedComponent(product, group);
   const rules = {
     eggs: [/яйц/iu, /шоколад|салат|лапш|майонез|соус/iu],
     avocado: [/авокадо/iu, /соус|салат|ролл|масло/iu],
@@ -48,11 +50,19 @@ export async function buildPlan(rpc, tools, authenticated, inputPreferences = {}
       }
     } catch { groups[group.key] = []; problems.push(group.label); }
   }
+  const mealOptions = completeMeals(groups, preference);
+  const usedMains = new Map();
   const target = dailyTarget();
   const days = [];
   for (let day = 0; day < 2; day++) {
     const meals = [];
     for (const [name, keys] of [['Завтрак', ['eggs', 'avocado', 'vegetables']], ['Обед', ['ready']], ['Ужин', ['ready']], ['Перекусы', [day ? 'curd' : 'yogurt', 'fruit', day ? 'sweet' : 'pastila']]]) {
+      if (name === 'Обед' || name === 'Ужин') {
+        const choice = [...mealOptions].sort((a, b) => a.cost + (usedMains.get(a.items[0].product.id) || 0) * 0.5 - b.cost - (usedMains.get(b.items[0].product.id) || 0) * 0.5)[0];
+        if (choice) usedMains.set(choice.items[0].product.id, (usedMains.get(choice.items[0].product.id) || 0) + 1);
+        meals.push({ name, items: choice ? choice.items.map(i => ({ ...i })) : [{ group: 'ready', label: 'Салат и второе или салат и суп: сочетание не найдено', product: null, grams: null }] });
+        continue;
+      }
       const items = keys.map(key => {
         const group = GROUPS.find(g => g.key === key);
         const pool = groups[key];
