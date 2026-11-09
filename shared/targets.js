@@ -28,23 +28,24 @@ const portions = {
 };
 // Bounded coordinate search; whole packages for ready meals and yogurt.
 // A locked replacement keeps the user's choice while other portions adapt.
-export function balanceDay(day, groups, target = dailyTarget(), locked = null) {
+export function balanceDay(day, groups, target = dailyTarget(), locked = null, preferences = {}) {
   const items = day.meals.flatMap(m => m.items);
+  const preferencePenalty = product => (preferences.recent?.includes(product.id) ? 0.04 : 0) - (preferences.liked?.includes(product.id) ? 0.01 : 0);
   if (!Number.isFinite(score(day, target))) return assessment(day, target);
   for (let pass = 0; pass < 4; pass++) {
     let changed = false;
     for (const item of items) {
       if (item === locked) continue;
       const original = { product: item.product, grams: item.grams };
-      let best = original, bestScore = score(day, target);
+      let best = original, bestScore = score(day, target) + preferencePenalty(item.product);
       const pool = groups[item.group] || [];
       for (const product of pool) {
-        if (product.availability === 'unavailable') continue;
+        if (product.availability === 'unavailable' || preferences.blocked?.includes(product.id)) continue;
         const weights = portions[item.group] || [product.packageGrams];
         for (const grams of weights) {
           if (!nutrientBounds(product, grams)) continue;
           item.product = product; item.grams = grams;
-          let candidate = score(day, target);
+          let candidate = score(day, target) + preferencePenalty(product);
           if (item.group === 'ready' && items.some(other => other !== item && other.group === 'ready' && other.product?.id === product.id)) candidate += 0.02;
           if (candidate < bestScore - 0.000001) { bestScore = candidate; best = { product, grams }; }
         }

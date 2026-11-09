@@ -188,3 +188,21 @@ test('balancing improves daily fit, preserves full ready packages and a chosen r
   first.product = { ...small, nutrition: null, nutritionRange: Object.fromEntries(Object.keys(target).map(k => [k, { min: 0, max: target[k] * 3 }])) };
   assert.equal(assessment(day, target).status, 'outside');
 });
+
+test('blocked products are excluded from plan candidates and invalid preferences fail before catalog calls', async () => {
+  const source = upstream();
+  const plan = await buildPlan(source.rpc, tools, true, { blocked: [1] });
+  assert.equal(plan.groups.ready.length, 0);
+  assert.ok(plan.days.flatMap(d => d.meals.flatMap(m => m.items)).every(i => i.product === null));
+  await assert.rejects(buildPlan(() => { throw new Error('must not call'); }, tools, true, { blocked: ['1'] }), /INVALID_PREFERENCES/);
+});
+
+test('equivalent meals prefer a fresh product over recently eaten food', async () => {
+  const { balanceDay } = await import('../../shared/targets.js');
+  const base = { packageGrams: 200, availability: 'available', nutrition: { kcal: 200, protein: 10, fat: 8, carbs: 22 } };
+  const recent = { ...base, id: 1 }, fresh = { ...base, id: 2 };
+  const selected = { group: 'yogurt', product: recent, grams: 200 };
+  const day = { meals: [{ items: [selected] }] };
+  balanceDay(day, { yogurt: [recent, fresh] }, { kcal: 400, protein: 20, fat: 16, carbs: 44 }, null, { recent: [1] });
+  assert.equal(selected.product.id, 2);
+});

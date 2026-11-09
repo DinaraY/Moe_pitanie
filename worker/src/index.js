@@ -85,7 +85,7 @@ export function createWorker(connect = withMcp) {
         if (path === '/api/tools') return reply({ tools: tools.filter(t => READ_TOOLS.has(t.name)) });
         if (path === '/api/search') return reply({ products: await search(rpc, tools, input.query.trim(), !!session) });
         if (path === '/api/product') return reply({ product: await details(rpc, tools, input.id, !!session) });
-        if (path === '/api/plan') return reply(await buildPlan(rpc, tools, !!session));
+        if (path === '/api/plan') return reply(await buildPlan(rpc, tools, !!session, input.preferences));
         if (path === '/api/cart/draft') {
           const result = await createDraft(env, session, rpc, tools, input.entries);
           return reply(result, result.error ? 409 : 200);
@@ -100,7 +100,7 @@ export function createWorker(connect = withMcp) {
         return reply({ source: 'https://mcp.vkusvill.ru/mcp', checkedAt: new Date().toISOString(), deliveryAvailability: 'unverified', result });
       }, fetch, session?.accessToken);
     } catch (error) {
-      const validation = ['INVALID_PLAN', 'INVALID_PORTION', 'TOO_MANY_PRODUCTS', 'CONFIRMATION_REQUIRED'];
+      const validation = ['INVALID_PREFERENCES', 'INVALID_PLAN', 'INVALID_PORTION', 'TOO_MANY_PRODUCTS', 'CONFIRMATION_REQUIRED'];
       if (validation.includes(error.message)) return reply({ error: error.message }, 400);
       const reasons = ['UPSTREAM_UNAVAILABLE', 'UPSTREAM_TOO_LARGE', 'UPSTREAM_RPC_ERROR', 'UNSUPPORTED_PROTOCOL', 'CATALOG_QUERY_FAILED', 'CATALOG_SCHEMA_CHANGED', 'TOOL_SCHEMA_CHANGED', 'TOOL_LIST_TOO_LARGE'];
       return reply({ error: 'MCP_UNAVAILABLE', reason: reasons.includes(error.message) ? error.message : error instanceof SyntaxError ? 'INVALID_UPSTREAM_JSON' : error instanceof TypeError ? 'RUNTIME_TYPE_ERROR' : 'UPSTREAM_FAILURE', protocolVersion: error.protocolVersion, upstreamStatus: Number.isInteger(error.upstreamStatus) ? error.upstreamStatus : undefined, message: 'Каталог недоступен или его формат изменился. Данные магазина не подставлены.' }, 502);

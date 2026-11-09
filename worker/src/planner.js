@@ -1,4 +1,5 @@
 import { search } from './catalog.js';
+import { validatePreferences } from '../../shared/journal.js';
 import { dailyTarget, balanceDay } from '../../shared/targets.js';
 export const GROUPS = Object.freeze([
   { key: 'eggs', query: 'яйца', label: 'Яйца', grams: 110 },
@@ -29,17 +30,20 @@ function suitable(product, group) {
   };
   return rules[group][0].test(name) && !rules[group][1].test(name);
 }
-export async function buildPlan(rpc, tools, authenticated) {
+export async function buildPlan(rpc, tools, authenticated, inputPreferences = {}) {
+  const preference = validatePreferences(inputPreferences);
   const groups = {}, problems = [];
   // Sequential calls respect upstream pressure. A failed group remains missing, never synthetic.
   for (const group of GROUPS) {
     try {
       groups[group.key] = (await search(rpc, tools, group.query, authenticated))
-        .filter(p => suitable(p, group.key));
+        .filter(p => suitable(p, group.key) && !preference.blocked.includes(p.id));
+      const preferenceScore = p => (preference.recent.includes(p.id) ? 2 : 0) - (preference.liked.includes(p.id) ? 1 : 0);
+      groups[group.key].sort((a, b) => preferenceScore(a) - preferenceScore(b));
       if (group.key === 'ready') {
         // A ranking preference, not a claim that the full day meets a calorie target.
         const score = p => p.nutrition && p.packageGrams ? Math.abs(p.nutrition.kcal * p.packageGrams / 100 - 450) : Infinity;
-        groups.ready.sort((a, b) => score(a) - score(b));
+        groups.ready.sort((a, b) => preferenceScore(a) - preferenceScore(b) || score(a) - score(b));
       }
     } catch { groups[group.key] = []; problems.push(group.label); }
   }
@@ -58,8 +62,8 @@ export async function buildPlan(rpc, tools, authenticated) {
       meals.push({ name, items });
     }
     const result = { day: day + 1, meals };
-    result.assessment = balanceDay(result, groups, target);
+    result.assessment = balanceDay(result, groups, target, null, preference);
     days.push(result);
   }
-  return { target, days, groups, problems, portionsAreSuggestions: true, deliveryAvailability: authenticated ? 'see_products' : 'unverified', checkedAt: new Date().toISOString() };
+  return { preferences: preference, target, days, groups, problems, portionsAreSuggestions: true, deliveryAvailability: authenticated ? 'see_products' : 'unverified', checkedAt: new Date().toISOString() };
 }
