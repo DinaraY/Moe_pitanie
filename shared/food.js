@@ -41,7 +41,7 @@ export function quote(entries) {
     else grouped.set(product.id, { product, grams });
   }
   const lines = [...grouped.values()].map(({ product, grams }) => {
-    const quantity = product.unit === 'кг' ? Math.ceil((grams / 1000) * 100) / 100 : product.unit === 'шт' && product.packageGrams > 0 ? Math.ceil(grams / product.packageGrams) : null;
+    const quantity = product.unit === 'кг' ? Math.ceil(grams / 10) / 100 : product.unit === 'шт' && product.packageGrams > 0 ? Math.ceil(grams / product.packageGrams) : null;
     return {
       product, grams, quantity,
       subtotal: quantity !== null && product.price !== null ? Math.round(quantity * product.price * 100) / 100 : null,

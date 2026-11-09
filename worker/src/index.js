@@ -60,7 +60,7 @@ export function createWorker(connect = withMcp) {
     let session;
     try { session = await sessionFor(request, env); }
     catch { return reply({ error: 'SESSION_EXPIRED' }, 401); }
-    if (path === '/api/session' && request.method === 'GET') return reply({ authenticated: !!session, expiresAt: session?.expiresAt || null, deliveryAvailability: 'unverified' });
+    if (path === '/api/session' && request.method === 'GET') return reply({ authenticated: !!session, expiresAt: session?.expiresAt || null, remembered: session?.remembered || false, deliveryAvailability: 'unverified' });
     if (path === '/api/session' && request.method === 'DELETE') {
       if (session) await session.destroy();
       return reply({ authenticated: false });
