@@ -96,7 +96,7 @@ test('plan contains two complete days only from products actually returned', asy
     calls++; const q = params.arguments.q;
     return envelope({ items: [item({ id: queries.indexOf(q) + 1, name: q === 'яйца' ? 'Яйца тестовые' : q })], meta: { personalized: true } });
   }, tools, true);
-  assert.equal(calls, 11);
+  assert.equal(calls, 14);
   assert.ok(plan.days.every(day => day.meals.length === 4 && day.meals.every(meal => meal.items.every(i => i.product && i.grams > 0))));
   assert.ok(Object.values(plan.groups).every(pool => pool.length === 1));
 });
@@ -248,4 +248,20 @@ test('search requests store rating sort only when the live tool schema supports 
   assert.equal(products[0].reviews.count, 50);
   await search(rpc, tools, 'тест', false);
   assert.equal(args.sort, undefined);
+});
+
+test('expanded meal searches add alternatives, deduplicate IDs and preserve successful results on partial failure', async () => {
+  const queries = [];
+  const plan = await buildPlan(async (method, params) => {
+    const q = params.arguments.q; queries.push(q);
+    if (q === 'суп с курицей') throw new Error('temporary upstream failure');
+    const id = q === 'салат с курицей' ? 100 : q === 'салат' ? 101 : 102;
+    const name = q.includes('салат') ? 'Салат с курицей' : q.includes('суп') ? 'Суп с курицей' : 'Курица с гарниром';
+    return envelope({ items: [item({ id, name }), item({ id, name })] });
+  }, tools, false);
+  assert.ok(queries.includes('курица с гарниром'));
+  assert.equal(plan.groups.salad.length, 2);
+  assert.equal(plan.groups.soup.length, 1);
+  assert.ok(!plan.problems.includes('Суп'));
+  assert.equal(plan.groups.ready.length, 1);
 });

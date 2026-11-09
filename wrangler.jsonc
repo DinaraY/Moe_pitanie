@@ -7,7 +7,7 @@
   "vars": {
     "ALLOWED_ORIGIN": "https://dinaray.github.io",
     "CATALOG_ENABLED": "true",
-    "AI_ENABLED": "false",
+    "AI_ENABLED": "true",
     "AI_MONTHLY_CALL_LIMIT": "100",
     "OAUTH_ENABLED": "true",
     "CART_ENABLED": "true",
