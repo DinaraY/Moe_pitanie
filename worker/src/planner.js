@@ -36,11 +36,19 @@ function suitable(product, group) {
 export async function buildPlan(rpc, tools, authenticated, inputPreferences = {}) {
   const preference = validatePreferences(inputPreferences);
   const groups = {}, problems = [];
-  // Sequential calls respect upstream pressure. A failed group remains missing, never synthetic.
+  // Groups are sequential; prepared meals use at most two independent searches at once.
+  const expandedQueries = { ready: 'курица с гарниром', salad: 'салат с курицей', soup: 'суп с курицей' };
   for (const group of GROUPS) {
     try {
-      groups[group.key] = (await search(rpc, tools, group.query, authenticated))
-        .filter(p => suitable(p, group.key) && !preference.blocked.includes(p.id));
+      const searches = [search(rpc, tools, group.query, authenticated)];
+      if (expandedQueries[group.key]) searches.push(search(rpc, tools, expandedQueries[group.key], authenticated, 'popularity'));
+      const results = await Promise.allSettled(searches);
+      if (results.every(result => result.status === 'rejected')) throw new Error('GROUP_UNAVAILABLE');
+      const unique = new Map();
+      for (const result of results) if (result.status === 'fulfilled') {
+        for (const product of result.value) if (suitable(product, group.key) && !preference.blocked.includes(product.id) && !unique.has(product.id)) unique.set(product.id, product);
+      }
+      groups[group.key] = [...unique.values()];
       const preferenceScore = p => (preference.recent.includes(p.id) ? 2 : 0) - (preference.liked.includes(p.id) ? 1 : 0);
       groups[group.key].sort((a, b) => preferenceScore(a) - preferenceScore(b) || reviewPenalty(a) - reviewPenalty(b));
       if (group.key === 'ready') {

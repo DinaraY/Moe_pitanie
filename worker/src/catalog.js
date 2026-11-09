@@ -95,9 +95,9 @@ export function requireTool(tools, name, requiredProperty, type) {
   if (!tool || tool.inputSchema?.properties?.[requiredProperty]?.type !== type) throw new Error('TOOL_SCHEMA_CHANGED');
   return tool;
 }
-export async function search(rpc, tools, query, authenticated) {
+export async function search(rpc, tools, query, authenticated, preferredSort = 'rating') {
   const tool = requireTool(tools, 'vkusvill_products_search', 'q', 'string');
-  const sort = tool.inputSchema.properties.sort?.enum?.includes('rating') ? { sort: 'rating' } : {};
+  const sort = tool.inputSchema.properties.sort?.enum?.includes(preferredSort) ? { sort: preferredSort } : {};
   const result = payload(await rpc('tools/call', { name: 'vkusvill_products_search', arguments: { q: query, page: 1, limit: 10, mode: 'full', ...sort } }));
   if (!Array.isArray(result.items)) throw new Error('CATALOG_SCHEMA_CHANGED');
   const personal = authenticated && result.meta?.personalized !== false;
