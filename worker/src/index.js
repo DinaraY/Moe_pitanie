@@ -1,3 +1,5 @@
+import { suggestToday, validateToday } from '../../shared/today.js';
+import { aiAvailable, aiSuggest } from './assistant.js';
 import { withMcp } from './mcp.js';
 import { configuration, oauth, sessionFor } from './auth.js';
 import { discover, search, details } from './catalog.js';
@@ -26,7 +28,7 @@ async function readJson(request) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('INVALID_REQUEST');
   return input;
 }
-export function createWorker(connect = withMcp) {
+export function createWorker(connect = withMcp, aiTransport = fetch) {
   return { async fetch(request, env) {
     const origin = request.headers.get('Origin');
     const headers = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', Vary: 'Origin' };
@@ -47,6 +49,7 @@ export function createWorker(connect = withMcp) {
       service: 'moe-pitanie-api', catalogEnabled: env.CATALOG_ENABLED === 'true',
       authorization: oauthReady ? 'available' : 'not_configured', deliveryAvailability: 'unverified',
       oauthSetup: { clientId: !!env.VV_CLIENT_ID, clientSecret: !!env.VV_CLIENT_SECRET, encryptionKey: encryptionKeyReady, enabled: env.OAUTH_ENABLED === 'true' },
+      aiAvailable: aiAvailable(env),
       cartEnabled: oauthReady && env.CATALOG_ENABLED === 'true' && env.CART_ENABLED === 'true'
     });
     if (path === '/api/cart' || (path === '/api/cart/confirm' && env.CART_ENABLED !== 'true')) return reply({ error: 'CART_DISABLED' }, 501);
@@ -65,7 +68,7 @@ export function createWorker(connect = withMcp) {
       if (session) await session.destroy();
       return reply({ authenticated: false });
     }
-    const postRoutes = ['/api/catalog', '/api/search', '/api/product', '/api/plan', '/api/cart/draft', '/api/cart/confirm'];
+    const postRoutes = ['/api/catalog', '/api/search', '/api/product', '/api/plan', '/api/today', '/api/cart/draft', '/api/cart/confirm'];
     if (!((path === '/api/tools' && request.method === 'GET') || (postRoutes.includes(path) && request.method === 'POST'))) return reply({ error: 'NOT_FOUND' }, 404);
     if (path.startsWith('/api/cart/') && !session) return reply({ error: 'LOGIN_REQUIRED' }, 401);
     if (env.CATALOG_ENABLED !== 'true') return reply({ error: 'CATALOG_DISABLED' }, 503);
@@ -79,12 +82,32 @@ export function createWorker(connect = withMcp) {
       if (path === '/api/search' && (typeof input.query !== 'string' || !input.query.trim() || input.query.length > 120)) return reply({ error: 'INVALID_REQUEST' }, 400);
       if (path === '/api/product' && (!Number.isSafeInteger(input.id) || input.id <= 0)) return reply({ error: 'INVALID_REQUEST' }, 400);
     }
+    if (path === '/api/today') {
+      try { validateToday(input); } catch (error) { return reply({ error: error.message }, 400); }
+      if (input.engine !== undefined && !['algorithm', 'ai'].includes(input.engine)) return reply({ error: 'INVALID_TODAY' }, 400);
+      if (input.engine === 'ai') {
+        if (!session) return reply({ error: 'LOGIN_REQUIRED' }, 401);
+        if (input.consent !== true) return reply({ error: 'AI_CONSENT_REQUIRED' }, 400);
+        if (!aiAvailable(env)) return reply({ error: 'AI_NOT_CONFIGURED' }, 503);
+      }
+      const preflight = suggestToday({}, input);
+      if (['unknown', 'target_reached'].includes(preflight.status)) return reply(preflight);
+    }
     try {
       return await connect(async rpc => {
         const tools = await discover(rpc);
         if (path === '/api/tools') return reply({ tools: tools.filter(t => READ_TOOLS.has(t.name)) });
         if (path === '/api/search') return reply({ products: await search(rpc, tools, input.query.trim(), !!session) });
         if (path === '/api/product') return reply({ product: await details(rpc, tools, input.id, !!session) });
+        if (path === '/api/today') {
+          const catalog = await buildPlan(rpc, tools, !!session, input.preferences);
+          let proposal = suggestToday(catalog.groups, input);
+          if (input.engine === 'ai') {
+            try { proposal = await aiSuggest(env, input, catalog.groups, proposal, aiTransport); }
+            catch (error) { proposal.aiNote = ['AI_MONTHLY_LIMIT', 'AI_INPUT_TOO_LARGE'].includes(error.message) ? error.message : 'AI_UNAVAILABLE'; }
+          }
+          return reply({ ...proposal, checkedAt: catalog.checkedAt, deliveryAvailability: catalog.deliveryAvailability });
+        }
         if (path === '/api/plan') return reply(await buildPlan(rpc, tools, !!session, input.preferences));
         if (path === '/api/cart/draft') {
           const result = await createDraft(env, session, rpc, tools, input.entries);

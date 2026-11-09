@@ -1,18 +1,19 @@
-import { JOURNAL_KEY, localDate, emptyJournal, cleanJournal, makeEntry, remainingToday, preferences } from './shared/journal.js?v=20261109-reviews1';
-import { dailyTarget } from './shared/targets.js?v=20261109-reviews1';
+import { JOURNAL_KEY, localDate, emptyJournal, cleanJournal, makeEntry, remainingToday, preferences } from './shared/journal.js?v=20261109-today1';
+import { dailyTarget } from './shared/targets.js?v=20261109-today1';
 const node = (tag, text) => { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; return el; };
 const fmt = n => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 }).format(n);
 const boundsText = bounds => !bounds ? 'Не хватает данных КБЖУ: неизвестное не считается нулём.' : Object.entries({ kcal: 'ккал', protein: 'Б', fat: 'Ж', carbs: 'У' }).map(([key, label]) => `${label} ${bounds[key].min === bounds[key].max ? fmt(bounds[key].min) : `${fmt(bounds[key].min)}–${fmt(bounds[key].max)}`}${key === 'kcal' ? '' : ' г'}`).join(' · ');
 export function createJournal(root, onRatingChange) {
+  const listeners = new Set();
   let journal = emptyJournal(), storageError = false;
   try { journal = cleanJournal(JSON.parse(localStorage.getItem(JOURNAL_KEY))); } catch { storageError = true; }
   const notice = node('p'); notice.setAttribute('role', 'status');
   const content = node('div');
   root.append(node('h2', 'Мой дневник питания'), node('p', 'История и оценки сохраняются только в этом браузере на этом устройстве, отдельно от входа во ВкусВилл. Очистка данных браузера удалит их; синхронизации между устройствами пока нет.'));
-  root.append(node('p', 'Меню не считается съеденным. Добавляйте только то, что действительно съели. Для подбора на сервер передаются только номера недавних, любимых и исключённых товаров; дневник целиком не передаётся.'));
+  root.append(node('p', 'Меню не считается съеденным. Добавляйте только то, что действительно съели. Для подбора передаются номера недавних, любимых и исключённых товаров. Для остатка дня также передаётся сумма КБЖУ съеденного за сегодня; дневник целиком не передаётся.'));
   root.append(notice, content);
   function commit(next, message) {
-    try { localStorage.setItem(JOURNAL_KEY, JSON.stringify(next)); journal = next; storageError = false; notice.textContent = message; render(); return true; }
+    try { localStorage.setItem(JOURNAL_KEY, JSON.stringify(next)); journal = next; storageError = false; notice.textContent = message; render(); for (const listener of listeners) listener(); return true; }
     catch { storageError = true; notice.textContent = 'Не удалось сохранить дневник. Проверьте, разрешено ли хранение данных в браузере. Запись не сохранена.'; return false; }
   }
   function render() {
@@ -72,5 +73,5 @@ export function createJournal(root, onRatingChange) {
     box.append(details); return box;
   }
   render();
-  return { controls, preferences: () => preferences(journal), isBlocked: id => journal.ratings[id] === 'blocked' };
+  return { controls, subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener); }, today: () => ({ date: localDate(), ...remainingToday(journal, dailyTarget()) }), preferences: () => preferences(journal), isBlocked: id => journal.ratings[id] === 'blocked' };
 }

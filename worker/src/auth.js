@@ -45,6 +45,16 @@ export class AuthStore {
   constructor(ctx) { this.ctx = ctx; }
   async fetch(request) {
     const { action, value } = await request.json();
+    if (action === 'reserve-ai') {
+      if (!Number.isInteger(value?.limit) || value.limit < 1 || value.limit > 100 || !Number.isFinite(value.expiresAt) || value.expiresAt <= Date.now()) return Response.json({ ok: false });
+      const result = await this.ctx.storage.transaction(async tx => {
+        const used = await tx.get('aiUsed') || 0;
+        if (used >= value.limit) return { ok: false, used };
+        await tx.put('aiUsed', used + 1); return { ok: true, used: used + 1 };
+      });
+      if (result.ok) await this.ctx.storage.setAlarm(value.expiresAt);
+      return Response.json(result);
+    }
     if (action === 'create') {
       const created = await this.ctx.storage.transaction(async tx => {
         if (await tx.get('record')) return false;
