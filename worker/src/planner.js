@@ -1,4 +1,5 @@
 import { preparedComponent, completeMeals } from '../../shared/meals.js';
+import { breakfastIngredient } from '../../shared/breakfast.js';
 import { reviewPenalty } from '../../shared/reviews.js';
 import { search } from './catalog.js';
 import { validatePreferences } from '../../shared/journal.js';
@@ -7,6 +8,7 @@ export const GROUPS = Object.freeze([
   { key: 'eggs', query: 'яйца', label: 'Яйца', grams: 110 },
   { key: 'avocado', query: 'авокадо', label: 'Авокадо', grams: 70 },
   { key: 'vegetables', query: 'помидоры', label: 'Овощи', grams: 150 },
+  { key: 'breakfastReady', query: 'омлет', label: 'Готовый завтрак', grams: null },
   { key: 'ready', query: 'готовые блюда', label: 'Второе', grams: null },
   { key: 'salad', query: 'салат', label: 'Салат', grams: null },
   { key: 'soup', query: 'суп', label: 'Суп', grams: null },
@@ -19,12 +21,10 @@ export const GROUPS = Object.freeze([
 export { nutrients, totals, quote } from '../../shared/food.js';
 function suitable(product, group) {
   if (product.availability === 'unavailable') return false;
+  if (['eggs', 'avocado', 'vegetables', 'breakfastReady'].includes(group)) return breakfastIngredient(product, group);
   const name = product.name.toLowerCase();
   if (['ready', 'salad', 'soup'].includes(group)) return preparedComponent(product, group);
   const rules = {
-    eggs: [/яйц/iu, /шоколад|салат|лапш|майонез|соус/iu],
-    avocado: [/авокадо/iu, /соус|салат|ролл|масло/iu],
-    vegetables: [/помидор|томат/iu, /сок|соус|паст|суш|вялен/iu],
     yogurt: [/йогурт/iu, /соус|салат/iu],
     curd: [/творог/iu, /салат|соус/iu],
     fruit: [/яблок/iu, /сок|пюре|суш|компот|салат|чипс|пастил/iu],
