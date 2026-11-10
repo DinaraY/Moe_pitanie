@@ -1,5 +1,5 @@
 import { dailyTarget } from './shared/targets.js?v=20261109-smallpacks1';
-import { MEALS } from './shared/today.js?v=20261109-smallpacks1';
+import { MEALS } from './shared/today.js?v=20261110-breakfast1';
 import { reviewText } from './shared/reviews.js?v=20261109-smallpacks1';
 const el = (tag, text) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; return node; };
 const money = n => new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
@@ -68,6 +68,7 @@ export function mountToday(root, { api, journal, available, onBasket, onInvalida
       else if (result.engine === 'ai') status.textContent += ' Вариант ИИ проверен приложением.';
       for (const meal of result.meals) {
         const section = el('section'); section.append(el('h3', meal.name));
+        if (meal.note) section.append(el('p', meal.note));
         for (const item of meal.items) {
           const p = item.product; section.append(el('strong', p.name), el('p', `Порция: ${fmt(item.grams)} г · ${p.price === null ? 'цена неизвестна' : `${money(p.price)} / ${p.unit || '?'}`}`), el('p', reviewText(p)));
           if (p.url) { const link = el('a', 'Карточка ВкусВилла'); link.href = p.url; link.target = '_blank'; link.rel = 'noopener noreferrer'; section.append(link); }

@@ -3,6 +3,7 @@ import { dailyTarget } from './targets.js';
 import { nutrientBounds } from './food.js';
 import { validatePreferences } from './journal.js';
 import { reviewPenalty } from './reviews.js';
+import { breakfastOptions } from './breakfast.js';
 export const MEALS = Object.freeze({ breakfast: 'Завтрак', lunch: 'Обед', dinner: 'Ужин', snack: 'Перекус' });
 const KEYS = ['kcal', 'protein', 'fat', 'carbs'];
 export function validateToday(input) {
@@ -38,7 +39,8 @@ export function todayOptions(groups, context) {
   for (const key of context.slots) {
     let combinations = [];
     if (key === 'breakfast') {
-      for (const egg of pool('eggs')) for (const avocado of pool('avocado')) for (const veg of pool('vegetables')) combinations.push([item('eggs', egg, 110), item('avocado', avocado, 55), item('vegetables', veg, 150)]);
+      options[key] = breakfastOptions(groups, context.preferences).map((option, i) => ({ ...option, id: `${key}_${i}`, preferenceCost: preferenceCost(option.items, context.preferences) }));
+      continue;
     } else if (key === 'lunch' || key === 'dinner') {
       combinations = mains.map(option => option.items);
     } else {
@@ -58,7 +60,7 @@ export function resultFor(chosen, context, engine = 'algorithm') {
   const bounds = chosen.reduce((value, option) => add(value, option.bounds), zero());
   const dayBounds = add(context.eaten, bounds);
   const status = KEYS.every(k => dayBounds[k].min >= target[k] * 0.9 && dayBounds[k].max <= target[k] * 1.1) ? 'within' : 'outside';
-  return { status, engine, target, eaten: context.eaten, bounds, dayBounds, score: dayScore(dayBounds, target), meals: chosen.map((o, i) => ({ key: context.slots[i], name: MEALS[context.slots[i]], optionId: o.id, items: o.items })) };
+  return { status, engine, target, eaten: context.eaten, bounds, dayBounds, score: dayScore(dayBounds, target), meals: chosen.map((o, i) => ({ key: context.slots[i], name: MEALS[context.slots[i]], optionId: o.id, items: o.items, ...(o.note ? { note: o.note } : {}) })) };
 }
 export function suggestToday(groups, input) {
   const context = validateToday(input), target = dailyTarget();
