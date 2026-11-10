@@ -1,5 +1,5 @@
 import { mainMealCheck, replacementPortion } from './shared/meals.js?v=20261109-smallpacks1';
-import { mountToday } from './today-ui.js?v=20261110-ai-consent1';
+import { mountToday } from './today-ui.js?v=20261110-retry1';
 import { localDate } from './shared/journal.js?v=20261109-smallpacks1';
 import { reviewText } from './shared/reviews.js?v=20261109-smallpacks1';
 import { createJournal } from './journal-ui.js?v=20261109-smallpacks1';

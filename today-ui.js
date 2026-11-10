@@ -22,10 +22,15 @@ export function mountToday(root, { api, journal, available, onBasket, onInvalida
   consent.setAttribute('aria-describedby', consentDetails.id);
   const ai = el('button', 'Подобрать с ИИ');
   const availability = el('p'), status = el('p'), results = el('div'); status.setAttribute('role', 'status');
+  status.id = 'today-status'; status.setAttribute('tabindex', '-1');
   availability.id = 'ai-availability'; availability.setAttribute('role', 'status');
   ai.setAttribute('aria-describedby', availability.id);
-  aiPanel.append(consentLabel, consentDetails, ai, availability);
-  root.append(slots, build, aiPanel, status, results);
+  aiPanel.append(consentLabel, consentDetails, ai, status, availability);
+  root.append(slots, build, aiPanel, results);
+  function showStatus(message) {
+    status.textContent = message;
+    status.scrollIntoView({ block: 'nearest' });
+  }
   function reset(message = '') { revision++; current = null; results.replaceChildren(); status.textContent = message; onInvalidate(); }
   checks.forEach(input => input.addEventListener('change', () => reset('Изменён список приёмов пищи. Повторите подбор.')));
   journal.subscribe(() => reset('Дневник или оценки изменились. Повторите подбор, чтобы учесть изменения.'));
@@ -33,6 +38,9 @@ export function mountToday(root, { api, journal, available, onBasket, onInvalida
     const state = available();
     build.disabled = busy || !state.catalog;
     ai.disabled = busy || !state.ai || !state.signedIn || !consent.checked;
+    build.textContent = busy ? 'Подбираем…' : 'Подобрать остаток дня';
+    ai.textContent = busy ? 'Подбираем…' : 'Подобрать с ИИ';
+    results.setAttribute('aria-busy', String(busy));
     availability.textContent = busy ? 'Подбор выполняется. Дождитесь результата.' : !state.ai ? 'ИИ-подбор пока не подключён. Обычный подбор доступен без ИИ.' : !state.signedIn ? 'Для ИИ-подбора сначала подключите ВкусВилл.' : !consent.checked ? 'ИИ доступен. Чтобы включить кнопку, отметьте «Разрешаю отправить в OpenAI данные для подбора меню» выше.' : 'Можно нажать «Подобрать с ИИ». Число вызовов ограничено; покупки не выполняются автоматически.';
   }
   consent.addEventListener('change', update);
@@ -40,18 +48,19 @@ export function mountToday(root, { api, journal, available, onBasket, onInvalida
     if (busy) return;
     const selected = checks.filter(i => i.checked).map(i => i.value), snapshot = journal.today();
     reset();
-    if (!selected.length) { status.textContent = 'Отметьте хотя бы один оставшийся приём пищи.'; return; }
-    if (!snapshot.eaten) { status.textContent = 'У части съеденного неизвестны КБЖУ. Рассчитать остаток нельзя: уточните записи в дневнике.'; return; }
-    if (snapshot.eaten.kcal.min >= dailyTarget().kcal) { status.textContent = 'Дневной ориентир калорий уже достигнут. Подбор под остаток не рассчитывается; это не рекомендация пропускать еду.'; return; }
+    if (!selected.length) { showStatus('Отметьте хотя бы один оставшийся приём пищи.'); return; }
+    if (!snapshot.eaten) { showStatus('У части съеденного неизвестны КБЖУ. Рассчитать остаток нельзя: уточните записи в дневнике.'); return; }
+    if (snapshot.eaten.kcal.min >= dailyTarget().kcal) { showStatus('Дневной ориентир калорий уже достигнут. Подбор под остаток не рассчитывается; это не рекомендация пропускать еду.'); return; }
     if (engine === 'ai' && (!consent.checked || !available().ai || !available().signedIn)) return;
     busy = true; update(); const version = revision;
-    status.textContent = engine === 'ai' ? 'Получаем реальные товары и проверяем вариант ИИ…' : 'Получаем реальные товары и подбираем оставшиеся приёмы пищи…';
+    showStatus(engine === 'ai' ? 'Получаем реальные товары и проверяем вариант ИИ… Это может занять до полутора минут.' : 'Получаем реальные товары и подбираем оставшиеся приёмы пищи…');
     try {
       const result = await api('/api/today', { method: 'POST', body: JSON.stringify({ engine, consent: engine === 'ai' && consent.checked, slots: selected, eaten: snapshot.eaten, preferences: journal.preferences() }) });
       if (version !== revision) return;
       if (journal.today().date !== snapshot.date) { reset('Наступил новый день. Проверьте дневник и повторите подбор.'); return; }
       if (!['within', 'outside'].includes(result.status)) {
-        status.textContent = result.status === 'target_reached' ? 'Ориентир уже достигнут. Это не рекомендация пропускать еду.' : 'Не хватает товаров с полными КБЖУ для выбранных приёмов пищи. Данные не подставлены.'; return;
+        const missing = (Array.isArray(result.missing) ? result.missing : []).filter(key => Object.hasOwn(MEALS, key));
+        status.textContent = result.status === 'target_reached' ? 'Ориентир уже достигнут. Это не рекомендация пропускать еду.' : `Не хватает товаров с полными КБЖУ${missing.length ? ` для: ${missing.map(key => MEALS[key]).join(', ')}` : ' для выбранных приёмов пищи'}. Подбор остановлен, данные не подставлены. Если этот приём пищи уже был, запишите съеденное в дневник и уберите его из списка «Ещё планирую съесть».`; return;
       }
       current = result;
       status.textContent = result.status === 'within' ? 'С учётом съеденного все показатели в пределах ±10% от дневного ориентира.' : 'Подобран ближайший вариант. С учётом доступных блюд попасть во все ориентиры не удалось — проверьте итог.';
@@ -73,7 +82,15 @@ export function mountToday(root, { api, journal, available, onBasket, onInvalida
         onBasket(current.meals.flatMap(m => m.items), snapshot.date);
       });
       results.append(basket);
-    } catch { if (version === revision) status.textContent = 'Подбор сейчас недоступен. Повторите попытку; дневник сохранён.'; }
+    } catch (error) {
+      if (version === revision) status.textContent = ({
+        SESSION_EXPIRED: 'Срок входа во ВкусВилл истёк. Подключите магазин снова и повторите подбор.',
+        LOGIN_REQUIRED: 'Для ИИ-подбора подключите ВкусВилл снова.',
+        RATE_LIMITED: 'Слишком много запросов подряд. Подождите минуту и повторите подбор.',
+        MCP_UNAVAILABLE: 'ВкусВилл сейчас не вернул каталог. Повторите подбор немного позже.',
+        AI_NOT_CONFIGURED: 'ИИ сейчас недоступен на сервере. Можно воспользоваться кнопкой «Подобрать остаток дня».'
+      })[error.message] || (['TimeoutError', 'AbortError'].includes(error.name) ? 'Сервер не успел ответить. Повторите подбор; дневник сохранён.' : 'Не удалось получить ответ сервера. Проверьте интернет и повторите подбор; дневник сохранён.');
+    }
     finally { busy = false; update(); }
   }
   build.addEventListener('click', () => run('algorithm'));
