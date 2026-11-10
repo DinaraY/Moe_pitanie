@@ -20,7 +20,7 @@ export function mountToday(root, { api, journal, available, onBasket, onInvalida
   const consentDetails = el('p', 'Дневной ориентир, КБЖУ съеденного, номера недавних и оценённых товаров и варианты из каталога. Полный дневник и данные входа не отправляются.');
   consentDetails.id = 'ai-consent-details'; consentDetails.className = 'muted';
   consent.setAttribute('aria-describedby', consentDetails.id);
-  const ai = el('button', 'Подобрать с ИИ'); ai.className = 'secondary';
+  const ai = el('button', 'Подобрать с ИИ');
   const availability = el('p'), status = el('p'), results = el('div'); status.setAttribute('role', 'status');
   availability.id = 'ai-availability'; availability.setAttribute('role', 'status');
   ai.setAttribute('aria-describedby', availability.id);
