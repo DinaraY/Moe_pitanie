@@ -12,11 +12,20 @@ export function mountToday(root, { api, journal, available, onBasket, onInvalida
   const slots = el('fieldset'); slots.append(el('legend', 'Ещё планирую съесть'));
   const checks = Object.entries(MEALS).map(([key, name]) => { const label = el('label', name + ' '), input = el('input'); input.type = 'checkbox'; input.value = key; input.checked = key !== 'breakfast'; label.prepend(input); label.style.display = 'block'; slots.append(label); return input; });
   const build = el('button', 'Подобрать остаток дня');
-  const consentLabel = el('label'), consent = el('input'); consent.type = 'checkbox';
-  consentLabel.append(consent, document.createTextNode(' Разрешаю отправить в OpenAI дневной ориентир, КБЖУ съеденного, номера недавних и оценённых товаров и варианты из каталога. Полный дневник и данные входа не отправляются.'));
+  const aiPanel = el('section'); aiPanel.className = 'ai-panel';
+  aiPanel.append(el('h3', 'Подбор с ИИ'));
+  const consentLabel = el('label'), consent = el('input'); consent.type = 'checkbox'; consent.id = 'ai-consent';
+  consentLabel.className = 'ai-consent';
+  consentLabel.append(consent, el('span', 'Разрешаю отправить в OpenAI данные для подбора меню'));
+  const consentDetails = el('p', 'Дневной ориентир, КБЖУ съеденного, номера недавних и оценённых товаров и варианты из каталога. Полный дневник и данные входа не отправляются.');
+  consentDetails.id = 'ai-consent-details'; consentDetails.className = 'muted';
+  consent.setAttribute('aria-describedby', consentDetails.id);
   const ai = el('button', 'Подобрать с ИИ'); ai.className = 'secondary';
   const availability = el('p'), status = el('p'), results = el('div'); status.setAttribute('role', 'status');
-  root.append(slots, build, consentLabel, ai, availability, status, results);
+  availability.id = 'ai-availability'; availability.setAttribute('role', 'status');
+  ai.setAttribute('aria-describedby', availability.id);
+  aiPanel.append(consentLabel, consentDetails, ai, availability);
+  root.append(slots, build, aiPanel, status, results);
   function reset(message = '') { revision++; current = null; results.replaceChildren(); status.textContent = message; onInvalidate(); }
   checks.forEach(input => input.addEventListener('change', () => reset('Изменён список приёмов пищи. Повторите подбор.')));
   journal.subscribe(() => reset('Дневник или оценки изменились. Повторите подбор, чтобы учесть изменения.'));
@@ -24,7 +33,7 @@ export function mountToday(root, { api, journal, available, onBasket, onInvalida
     const state = available();
     build.disabled = busy || !state.catalog;
     ai.disabled = busy || !state.ai || !state.signedIn || !consent.checked;
-    availability.textContent = !state.ai ? 'ИИ-подбор пока не подключён. Обычный подбор доступен без ИИ.' : !state.signedIn ? 'Для ИИ-подбора сначала подключите ВкусВилл.' : 'ИИ доступен по вашему запросу. Число вызовов ограничено; покупки не выполняются автоматически.';
+    availability.textContent = busy ? 'Подбор выполняется. Дождитесь результата.' : !state.ai ? 'ИИ-подбор пока не подключён. Обычный подбор доступен без ИИ.' : !state.signedIn ? 'Для ИИ-подбора сначала подключите ВкусВилл.' : !consent.checked ? 'ИИ доступен. Чтобы включить кнопку, отметьте «Разрешаю отправить в OpenAI данные для подбора меню» выше.' : 'Можно нажать «Подобрать с ИИ». Число вызовов ограничено; покупки не выполняются автоматически.';
   }
   consent.addEventListener('change', update);
   async function run(engine) {
